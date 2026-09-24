@@ -54,11 +54,53 @@ function volume(value, fallback) {
     return Math.max(0, Math.min(1, v))
 }
 
+/** The bundled keyboard tick samples, by their setting value. */
+var CLICK_SOUNDS = ["tick", "deep", "deeper"]
+
+/** Is `value` one of the bundled keyboard tick samples? */
+function isClickSound(value) {
+    return typeof value === "string" && CLICK_SOUNDS.indexOf(value) !== -1
+}
+
+/**
+ * The qrc URL of the click sample a setting names.  Anything unknown
+ * (including the "" of settings written before this existed) falls back
+ * to the factory tick, so an old profile still clicks the old way.
+ */
+function sampleSource(name) {
+    switch (name) {
+    case "deep":   return "qrc:/sounds/keyclick-deep.wav"
+    case "deeper": return "qrc:/sounds/keyclick-deeper.wav"
+    default:       return "qrc:/sounds/keyclick.wav"
+    }
+}
+
+/**
+ * Flipping the key click (View menu, or PF7) must be *audible*: the master
+ * audio gate ships off, so arming the click opens it too.  Turning the
+ * click off leaves the master alone -- the bell has its own switch.
+ *
+ * `state.keyClick` is the value BEFORE the flip (the Action has already
+ * toggled its own `checked`).  Returns both settings to write.
+ */
+function toggleKeyClick(state) {
+    var s = state || {}
+    var on = s.keyClick !== true
+    return {
+        keyClick: on,
+        audioEnabled: on ? true : s.audioEnabled === true
+    }
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         audible: audible,
         shouldClick: shouldClick,
         shouldBell: shouldBell,
-        volume: volume
+        volume: volume,
+        CLICK_SOUNDS: CLICK_SOUNDS,
+        isClickSound: isClickSound,
+        sampleSource: sampleSource,
+        toggleKeyClick: toggleKeyClick
     }
 }

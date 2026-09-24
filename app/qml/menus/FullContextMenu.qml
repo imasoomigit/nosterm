@@ -37,6 +37,19 @@ Menu {
         MenuItem {
             action: newWindowAction
         }
+        Menu {
+            id: profileMenu
+            title: qsTr("New Window with Profile")
+            Instantiator {
+                model: appSettings.profilesList
+                delegate: MenuItem {
+                    text: model.text
+                    onTriggered: appRoot.createWindow(text)
+                }
+                onObjectAdded: (index, object) => profileMenu.insertItem(index, object)
+                onObjectRemoved: (index, object) => profileMenu.removeItem(object)
+            }
+        }
         MenuItem {
             action: newTabAction
         }
@@ -78,12 +91,13 @@ Menu {
             model: appSettings.profilesList
             delegate: MenuItem {
                 text: model.text
-                onTriggered: {
-                    appSettings.loadProfileString(obj_string)
-                }
+                // loadProfile, not loadProfileString: choosing a profile
+                // makes it the active one, so autosaved tweaks land in the
+                // profile that is actually showing.
+                onTriggered: appSettings.loadProfile(index)
             }
-            onObjectAdded: function(index, object) { profilesMenu.insertItem(index, object) }
-            onObjectRemoved: function(object) { profilesMenu.removeItem(object) }
+            onObjectAdded: (index, object) => profilesMenu.insertItem(index, object)
+            onObjectRemoved: (index, object) => profilesMenu.removeItem(object)
         }
     }
     Menu {

@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+      - macos-preview
     tags:
       - '*'
 
@@ -47,7 +48,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cool-retro-term-appimage
+          name: nostalgic-terminal-appimage
           path: ./release/*
 
   test:
@@ -92,6 +93,22 @@ jobs:
           qmake ../tests/tests.pro
           make -j"$(nproc)"
 
+      # SoundEffect can only reach Ready when there is somewhere to send the
+      # audio, and runners ship without sound hardware.  Stand up a
+      # PulseAudio null sink so the decode test takes its strict branch;
+      # best effort only, the test also tolerates a fully silent machine.
+      - name: Provide a dummy audio device
+        run: |
+          RT="${XDG_RUNTIME_DIR:-/tmp/xdg-runtime}"
+          mkdir -p "$RT"
+          echo "XDG_RUNTIME_DIR=$RT" >> "$GITHUB_ENV"
+          sudo apt-get install -y --no-install-recommends pulseaudio pulseaudio-utils || true
+          XDG_RUNTIME_DIR="$RT" pulseaudio --start --exit-idle-time=-1 || true
+          XDG_RUNTIME_DIR="$RT" pactl load-module module-null-sink sink_name=dummy || true
+          XDG_RUNTIME_DIR="$RT" pactl set-default-sink dummy || true
+          echo "--- sinks:"
+          XDG_RUNTIME_DIR="$RT" pactl list short sinks || true
+
       - name: Run Qt Quick tests
         run: QT_QPA_PLATFORM=offscreen ./build-tests/tst_retroterm
 
@@ -125,7 +142,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cool-retro-term-dmg
+          name: nostalgic-terminal-dmg
           path: ./release/*
 
   release:
@@ -143,13 +160,13 @@ jobs:
       - name: Download AppImage
         uses: actions/download-artifact@v4
         with:
-          name: cool-retro-term-appimage
+          name: nostalgic-terminal-appimage
           path: ./release
 
       - name: Download DMG
         uses: actions/download-artifact@v4
         with:
-          name: cool-retro-term-dmg
+          name: nostalgic-terminal-dmg
           path: ./release
 
       - name: Update rolling tag

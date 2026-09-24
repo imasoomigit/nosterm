@@ -34,17 +34,35 @@ test('PA slots use the IBM PC/3270 default bindings', () => {
   assert.equal(PfKeys.defaultLabelFor(14), 'PA3')
 })
 
-test('defaults are pass-through for PF keys so enabling the bar changes nothing', () => {
+test('defaults are the factory PF panel: menu functions, no shell commands', () => {
   const defs = PfKeys.defaultAssignments()
   assert.equal(defs.length, PfKeys.KEY_COUNT)
+  const expected = [
+    'help', 'splitVertical', 'closeWindow', 'nextWindow', 'prevWindow',
+    'splitHorizontal', 'toggleKeySound', 'settings', 'newTab', 'quit',
+    'fullscreen', 'newWindow'
+  ]
+  assert.deepEqual(PfKeys.PF_DEFAULT_ACTIONS, expected)
   for (let i = 0; i < 12; i++) {
-    assert.equal(defs[i].action, 'pass')
-    assert.equal(PfKeys.intercepts(defs[i]), false,
-      `PF${i + 1} must not be intercepted by default`)
+    assert.equal(defs[i].action, expected[i], `PF${i + 1}`)
+    assert.equal(PfKeys.intercepts(defs[i]), true,
+      `PF${i + 1} carries its function out of the box`)
+    assert.notEqual(PfKeys.legend(defs[i]), '',
+      `PF${i + 1} prints a legend`)
+    assert.equal(PfKeys.actionById(defs[i].action).kind, 'app',
+      `PF${i + 1} is an app function, not a command`)
   }
 
-  // ... but the bar as a whole is NOT inert: PA1 ships as the 3270 attention
-  // key, which is exactly what a real terminal does out of the box.
+  // Shell commands (FILEL, XEDIT, macros) never ride a factory key: the
+  // CMS set lives in the alias block, the panel stays functions-only --
+  // though they remain in the catalogue for manual assignment.
+  assert.ok(PfKeys.isKnownAction('fileList'))
+  assert.ok(PfKeys.isKnownAction('xedit'))
+
+  // PA1 still ships as the 3270 attention key; PA2/PA3 pass through.
+  assert.equal(defs[12].action, 'interrupt')
+  assert.equal(defs[13].action, 'pass')
+  assert.equal(defs[14].action, 'pass')
   assert.equal(PfKeys.anyIntercepting(defs), true)
   const allPass = defs.map(a => ({ ...a, action: 'pass' }))
   assert.equal(PfKeys.anyIntercepting(allPass), false)
@@ -90,13 +108,13 @@ test('normalize repairs short, null and unknown input', () => {
   assert.equal(out.length, PfKeys.KEY_COUNT)
   assert.equal(out[0].action, 'newWindow')
   assert.equal(out[0].key, 'F1', 'missing key falls back to the slot default')
-  assert.equal(out[1].action, 'pass', 'missing slots fall back to defaults')
+  assert.equal(out[1].action, 'splitVertical', 'missing slots fall back to defaults')
   assert.equal(out[0].label, 'PF1')
 })
 
 test('normalize replaces unknown action ids with the default', () => {
   const out = PfKeys.normalize([{ action: 'launchMissiles', key: 'F1' }])
-  assert.equal(out[0].action, 'pass')
+  assert.equal(out[0].action, 'help')
 })
 
 test('serialize/parse round trips', () => {
@@ -120,7 +138,7 @@ test('parse tolerates corrupt stored values', () => {
 })
 
 test('legend only shows an entry when a function is assigned', () => {
-  const pass = PfKeys.defaultAssignments()[0]
+  const pass = { action: 'pass' }
   assert.equal(PfKeys.legend(pass), '')
 
   const win = { action: 'newWindow' }
@@ -187,4 +205,125 @@ test('macroText decodes and turns line feeds into carriage returns', () => {
   // Escapes are decoded before the CR mapping, so \e[31m survives intact.
   assert.equal(PfKeys.macroText('\\e[31mred\\e[0m\\n'),
                '\u001b[31mred\u001b[0m\r')
+})
+
+test('FILEL and XEDIT are catalogue functions with fixed legends', () => {
+  const fileList = PfKeys.actionById('fileList')
+  const xedit = PfKeys.actionById('xedit')
+  assert.ok(fileList, 'FILEL exists')
+  assert.ok(xedit, 'XEDIT exists')
+  assert.equal(fileList.kind, 'term')
+  assert.equal(xedit.kind, 'term')
+  // The legend reads exactly what the operator calls the key.
+  assert.equal(PfKeys.legend({ action: 'fileList' }), 'FILEL')
+  assert.equal(PfKeys.legend({ action: 'xedit' }), 'XEDIT')
+  // Both claim their F-key rather than passing it to the shell.
+  assert.equal(PfKeys.intercepts({ action: 'fileList' }), true)
+  assert.equal(PfKeys.intercepts({ action: 'xedit' }), true)
+  // And both are offered in the editor.
+  const offered = PfKeys.assignableActions(0, {})
+  assert.ok(offered.some(a => a.id === 'fileList'))
+  assert.ok(offered.some(a => a.id === 'xedit'))
+})
+
+test('commandFor resolves FILEL and XEDIT per platform', () => {
+  // FILEL: ls on unix, dir on Windows -- dir works in cmd.exe and in
+  // PowerShell alike (it is an alias there), covering "either dir or ls".
+  assert.equal(PfKeys.commandFor('fileList', 'x11'), 'ls\r')
+  assert.equal(PfKeys.commandFor('fileList', 'wayland'), 'ls\r')
+  assert.equal(PfKeys.commandFor('fileList', 'mac'), 'ls\r')
+  assert.equal(PfKeys.commandFor('fileList', 'osx'), 'ls\r')
+  assert.equal(PfKeys.commandFor('fileList', 'win32'), 'dir\r')
+
+  // XEDIT: vi on unix (POSIX guarantees it), notepad on Windows.
+  assert.equal(PfKeys.commandFor('xedit', 'x11'), 'vi\r')
+  assert.equal(PfKeys.commandFor('xedit', 'mac'), 'vi\r')
+  assert.equal(PfKeys.commandFor('xedit', 'win32'), 'notepad\r')
+
+  // Fixed-payload actions are not handled here; caller falls back.
+  assert.equal(PfKeys.commandFor('interrupt', 'x11'), '')
+  assert.equal(PfKeys.commandFor('eraseInput', 'win32'), '')
+  assert.equal(PfKeys.commandFor('sendText', 'x11'), '')
+  assert.equal(PfKeys.commandFor('notAnAction', 'x11'), '')
+})
+
+test('commandFor accepts every spelling of the Windows platform name', () => {
+  // Qt has shipped both "win32" and "windows"; the terminal passes
+  // Qt.platform.os straight through, so neither spelling may be missed.
+  for (const os of ['win32', 'windows', 'win', 'WIN64']) {
+    assert.equal(PfKeys.commandFor('fileList', os), 'dir\r', os)
+    assert.equal(PfKeys.commandFor('xedit', os), 'notepad\r', os)
+  }
+  assert.equal(PfKeys.commandFor('fileList', 'osx'), 'ls\r')
+  assert.equal(PfKeys.commandFor('fileList', undefined), 'ls\r')
+  assert.equal(PfKeys.commandFor('fileList', null), 'ls\r')
+})
+
+test('the panel catalog gained the window functions the defaults need', () => {
+  const ids = PfKeys.actionIds()
+  for (const id of ['help', 'splitVertical', 'splitHorizontal',
+                    'toggleKeySound', 'quit']) {
+    assert.ok(ids.includes(id), `${id} missing from the catalogue`)
+    assert.equal(PfKeys.actionById(id).kind, 'app')
+  }
+  // Labels the panel prints verbatim (uppercased by the bar).
+  assert.equal(PfKeys.actionById('help').label, 'Help')
+  assert.equal(PfKeys.actionById('prevWindow').label, 'Previous Window')
+  assert.equal(PfKeys.actionById('fullscreen').label, 'Exit Full Screen')
+  assert.equal(PfKeys.actionById('quit').label, 'Exit')
+})
+
+test('helpCommand maps the input box to man exactly as specified', () => {
+  // Blank topic -> list the whole manual (CMS HELP with no operand).
+  assert.equal(PfKeys.helpCommand(''), 'man -k .\r')
+  assert.equal(PfKeys.helpCommand('   '), 'man -k .\r')
+  assert.equal(PfKeys.helpCommand(undefined), 'man -k .\r')
+  assert.equal(PfKeys.helpCommand(null), 'man -k .\r')
+  // A topic -> that man page, quoted so spaces and quotes survive the shell.
+  assert.equal(PfKeys.helpCommand('printf'), "man -- 'printf'\r")
+  assert.equal(PfKeys.helpCommand('  pwd  '), "man -- 'pwd'\r")
+  assert.equal(PfKeys.helpCommand('echo hi'), "man -- 'echo hi'\r")
+  assert.equal(PfKeys.helpCommand("a'b"), "man -- 'a'\\''b'\r")
+})
+
+test('Bigger/Smaller are catalogue functions, offered but never factory keys', () => {
+  // Screen size as a PF function: the same rungs Zoom In / Zoom Out
+  // climb, so the key still works where a chord might be swallowed
+  // (full screen).  Bindable by hand; the factory panel is unchanged.
+  const bigger = PfKeys.actionById('bigger')
+  const smaller = PfKeys.actionById('smaller')
+  assert.ok(bigger, 'bigger missing from the catalogue')
+  assert.ok(smaller, 'smaller missing from the catalogue')
+  assert.equal(bigger.kind, 'app')
+  assert.equal(smaller.kind, 'app')
+  assert.equal(PfKeys.legend({ action: 'bigger' }), 'Bigger')
+  assert.equal(PfKeys.legend({ action: 'smaller' }), 'Smaller')
+  assert.equal(PfKeys.intercepts({ action: 'bigger' }), true,
+    'the PF key claims its chord rather than passing it to the shell')
+
+  const offered = PfKeys.assignableActions(0, {})
+  assert.ok(offered.some(a => a.id === 'bigger'), 'the editor must offer it')
+  assert.ok(offered.some(a => a.id === 'smaller'), 'the editor must offer it')
+  for (const id of PfKeys.PF_DEFAULT_ACTIONS) {
+    assert.notEqual(id, 'bigger', 'it must not claim a factory PF key')
+    assert.notEqual(id, 'smaller', 'it must not claim a factory PF key')
+  }
+})
+
+test('Save Profile sits in the catalogue but never on a factory key', () => {
+  // The settings dialog's Save is bindable by hand, the way FILEL and
+  // XEDIT are -- but the factory panel is functions the menus already
+  // cover, so it ships unassigned.
+  const save = PfKeys.actionById('saveProfile')
+  assert.ok(save, 'saveProfile missing from the catalogue')
+  assert.equal(save.kind, 'app')
+  assert.equal(save.label, 'Save Profile')
+  assert.ok(PfKeys.assignableActions(0, {}).some(a => a.id === 'saveProfile'),
+    'the editor must offer it')
+  for (const id of PfKeys.PF_DEFAULT_ACTIONS) {
+    assert.notEqual(id, 'saveProfile', 'it must not claim a factory PF key')
+  }
+  // The panel would print it honestly if a user did bind it.
+  assert.equal(PfKeys.legend({ action: 'saveProfile' }), 'Save Profile')
+  assert.equal(PfKeys.intercepts({ action: 'saveProfile' }), true)
 })

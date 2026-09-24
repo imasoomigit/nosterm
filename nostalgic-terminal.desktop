@@ -1,9 +1,9 @@
 [Desktop Entry]
 Comment=Use the command line the old way
-Exec=cool-retro-term
+Exec=nostalgic-terminal
 GenericName=Terminal emulator
-Icon=cool-retro-term
-Name=Cool Retro Term
+Icon=nostalgic-terminal
+Name=Nostalgic Terminal
 Categories=System;TerminalEmulator;
 StartupNotify=true
 Terminal=false
@@ -13,4 +13,4 @@ Actions=NewWindow;
 
 [Desktop Action NewWindow]
 Name=New Window
-Exec=cool-retro-term
+Exec=nostalgic-terminal

@@ -12,6 +12,7 @@
         <file>SimpleSlider.qml</file>
         <file>ColorButton.qml</file>
         <file>AboutDialog.qml</file>
+        <file>HelpDialog.qml</file>
         <file>InsertNameDialog.qml</file>
         <file>SettingsEffectsTab.qml</file>
         <file>main.qml</file>
@@ -21,7 +22,8 @@
         <file>Storage.qml</file>
         <file>SettingsAdvancedTab.qml</file>
         <file>SettingsRetroTab.qml</file>
-        <file>TerminalContainer.qml</file>
+        <file>TerminalPane.qml</file>
+        <file>CrtUnit.qml</file>
         <file>TerminalTabs.qml</file>
         <file>PfKeyBar.qml</file>
         <file>LineHighlight.qml</file>
@@ -31,10 +33,16 @@
         <file>logic/pfkeys.js</file>
         <file>logic/windows.js</file>
         <file>logic/chrome.js</file>
+        <file>logic/ibmprofile.js</file>
+        <file>logic/aliases.js</file>
         <file>logic/defaults.js</file>
+        <file>logic/profiles.js</file>
         <file>logic/linehighlight.js</file>
+        <file>logic/colormode.js</file>
         <file>logic/sound.js</file>
         <file>sounds/keyclick.wav</file>
+        <file>sounds/keyclick-deep.wav</file>
+        <file>sounds/keyclick-deeper.wav</file>
         <file>sounds/bell.wav</file>
         <file>images/crt256.png</file>
         <file>utils.js</file>
@@ -48,7 +56,7 @@
         <file>fonts/bigblue-terminal/BigBlueTerm437NerdFontMono-Regular.ttf</file>
         <file>fonts/iosevka/IosevkaTermNerdFontMono-Regular.ttf</file>
         <file>fonts/jetbrains-mono/JetBrainsMonoNerdFontMono-Regular.ttf</file>
-        <file>../icons/32x32/cool-retro-term.png</file>
+        <file>../icons/32x32/nostalgic-terminal.png</file>
         <file>Components/SizedLabel.qml</file>
         <file>fonts/atari-400-800/AtariClassic-Regular.ttf</file>
         <file>fonts/pet-me/PetMe64.ttf</file>

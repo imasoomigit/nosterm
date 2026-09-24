@@ -1,5 +1,5 @@
 #
-# spec file for package cool-retro-term
+# spec file for package nostalgic-terminal
 #
 # Copyright © 2014 Markus S. <kamikazow@web.de>
 #
@@ -16,16 +16,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-Name:       cool-retro-term
-Summary:    Cool Retro Terminal
+Name:       nostalgic-terminal
+Summary:    Nostalgic Terminal
 Version:    1.0
 Release:    0%{?dist}
 Group:      System/X11/Terminals
 License:    GPL-3.0+
 URL:        https://github.com/Swordfish90/cool-retro-term
 
-# For this spec file to work, the cool-retro-term sources must be located
-# in a directory named cool-retro-term-0.9 (with "0.9" being the version
+# For this spec file to work, the nostalgic-terminal sources must be located
+# in a directory named nostalgic-terminal-0.9 (with "0.9" being the version
 # number defined above).
 # If the sources are compressed in another format than .tar.xz, change the
 # file extension accordingly.
@@ -57,7 +57,7 @@ Requires:      libqt5-qtgraphicaleffects
 %endif
 
 %description
-cool-retro-term is a terminal emulator which tries to mimic the look and feel
+nostalgic-terminal is a terminal emulator which tries to mimic the look and feel
 of the old cathode tube screens. It has been designed to be eye-candy,
 customizable, and reasonably lightweight.
 

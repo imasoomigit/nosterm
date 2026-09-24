@@ -56,7 +56,12 @@ function sequences(os) {
         quit:         mac ? "StandardKey.Quit" : "Ctrl+Shift+Q",
         copy:         mac ? "StandardKey.Copy" : "Ctrl+Shift+C",
         paste:        mac ? "StandardKey.Paste": "Ctrl+Shift+V",
-        zoomIn:       "StandardKey.ZoomIn",
+        // Qt's ZoomIn binding ("Ctrl++") only matches a keypress whose
+        // Shift has been folded into the key, and it never matches the
+        // plain "=" key -- on a real US keyboard neither press reaches it.
+        // It stays the *displayed* binding; alternates() below hands the
+        // physical spellings to the window (see TerminalWindow.qml).
+        zoomIn:       mac ? "StandardKey.ZoomIn" : "Ctrl++",
         zoomOut:      "StandardKey.ZoomOut"
     }
 }
@@ -67,6 +72,60 @@ function sequence(os, name) {
     if (map[name] === undefined)
         return ""
     return map[name]
+}
+
+/**
+ * Extra sequences that also trigger a function, on top of the one shown
+ * in the menu.
+ *
+ * zoomIn: Qt's StandardKey.ZoomIn resolves to "Ctrl++", which only ever
+ * matches a keypress whose Shift was folded away -- while pressing the
+ * "+" key actually delivers Ctrl+Shift+'+' and the "=" key delivers
+ * Ctrl+'=' (verified against QKeySequence::matches on Qt 6.8).  Both
+ * physical spellings are therefore bound by hand next to the standard
+ * one, so "bigger fonts" always has a key.  Every spelling returned here
+ * uses a different key or modifier set than the primary binding, so no
+ * single keypress can ever match two of them at once.
+ */
+function alternates(os, name) {
+    if (name !== "zoomIn")
+        return []
+    return isMac(os) ? ["Meta+Shift++", "Meta+="]
+                     : ["Ctrl+Shift++", "Ctrl+="]
+}
+
+/**
+ * Every physical spelling that must hold a *live* shortcut for a zoom key
+ * -- the guaranteed floor under the menu Action, whose own registration
+ * resolves through a window context that could fail to match in full
+ * screen (TerminalWindow.qml registers these Application-scoped).
+ *
+ * Unlike alternates() this list deliberately INCLUDES the standard
+ * spelling: Qt prefers the Action when both hold the same sequence (no
+ * ambiguity deadlock, verified on Qt 6.8), so the overlap is safe, and
+ * the Shortcut is what still works precisely when the Action cannot.
+ * No two spellings in the list can match one keypress: each uses a
+ * different key or modifier set.
+ *
+ *   zoomIn:   Ctrl+'+' (numpad / direct-Plus keyboards), Ctrl+Shift+'+'
+ *             and Ctrl+'=' (US "=").
+ *   zoomOut:  Ctrl+'-'.
+ *
+ * macOS carries BOTH modifier families: Cmd is the convention the menu
+ * shows and StandardKey.ZoomIn binds it, while the plain Ctrl spellings
+ * are registered next to it because Cmd combinations are exactly what
+ * the system and the (auto-hidden, full screen) native menu bar tend to
+ * own -- and a Ctrl chord is never claimed by macOS.
+ */
+function zoomSpellings(os, name) {
+    var ctrl = isMac(os)
+    if (name === "zoomIn")
+        return ctrl ? ["Meta++", "Meta+Shift++", "Meta+=",
+                       "Ctrl++", "Ctrl+Shift++", "Ctrl+="]
+                    : ["Ctrl++", "Ctrl+Shift++", "Ctrl+="]
+    if (name === "zoomOut")
+        return ctrl ? ["Meta+-", "Ctrl+-"] : ["Ctrl+-"]
+    return []
 }
 
 /**
@@ -90,6 +149,8 @@ if (typeof module !== "undefined" && module.exports) {
         isMac: isMac,
         sequences: sequences,
         sequence: sequence,
+        alternates: alternates,
+        zoomSpellings: zoomSpellings,
         usableSequences: usableSequences
     }
 }

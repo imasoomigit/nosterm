@@ -18,12 +18,15 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 *******************************************************************************/
 import QtQuick
+import QtQml
 import QtQuick.Window
 import QtQuick.Controls
 
 import "menus"
 import "logic/platform.js" as Platform
 import "logic/pfkeys.js" as PfKeys
+import "logic/chrome.js" as Chrome
+import "logic/sound.js" as SoundLogic
 
 ApplicationWindow {
     id: terminalWindow
@@ -42,9 +45,71 @@ ApplicationWindow {
     visible: false
 
     property bool fullscreen: false
-    onFullscreenChanged: visibility = (fullscreen ? Window.FullScreen : Window.Windowed)
+    // Read the *real* window state: the green button and any window-manager
+    // full screen path change `visibility` without touching our flag.
+    readonly property bool isFullscreen: visibility === Window.FullScreen
 
-    menuBar: WindowMenu { }
+    // Top-edge pointer reveal: the "touch the top of the screen" menu
+    // mechanism.  Transient -- cleared the moment the window leaves full
+    // screen, however it leaves.
+    property bool menubarReveal: false
+
+    onFullscreenChanged: {
+        menubarReveal = false
+        visibility = (fullscreen ? Window.FullScreen : Window.Windowed)
+    }
+    onVisibilityChanged: function(visibility) {
+        if (visibility !== Window.FullScreen)
+            menubarReveal = false
+    }
+
+    /**
+     * Chrome for *this* window.  Nostalgic mode hides the menu bar and the
+     * context menu only while full screen; leaving full screen brings the
+     * menu bar back and it stays until you go full screen again.
+     */
+    readonly property var chrome: Chrome.visibility({
+        nostalgicMode: appSettings.nostalgicMode,
+        showMenubar: appSettings.showMenubar,
+        showTerminalSize: appSettings.showTerminalSize,
+        isMacOS: appSettings.isMacOS,
+        fullscreen: isFullscreen
+    })
+
+    menuBar: WindowMenu { target: terminalWindow }
+
+    /**
+     * Everything a menu bar needs, published as a single property.
+     *
+     * macOS builds the menu bar from the *active* window, and Settings is a
+     * window too: it has to offer the very same bar (aimed at whichever
+     * terminal window was last active) or the whole menu empties while it is
+     * focused.  A menu bar living in another file cannot see this file's ids,
+     * so the actions go out as properties.
+     *
+     * "bigger"/"smaller" rather than "zoomIn"/"zoomOut": those names belong
+     * to the ids these point at, and a property may not shadow them.
+     */
+    property QtObject menuActions: QtObject {
+        readonly property Action fullscreen: fullscreenAction
+        readonly property Action newWindow: newWindowAction
+        readonly property Action newTab: newTabAction
+        readonly property Action closeTab: closeTabAction
+        readonly property Action closeWindow: closeWindowAction
+        readonly property Action quit: quitAction
+        readonly property Action settings: showsettingsAction
+        readonly property Action copy: copyAction
+        readonly property Action paste: pasteAction
+        readonly property Action nextWindow: nextWindowAction
+        readonly property Action previousWindow: previousWindowAction
+        readonly property Action splitVertical: splitVerticalAction
+        readonly property Action splitHorizontal: splitHorizontalAction
+        readonly property Action bigger: zoomIn
+        readonly property Action smaller: zoomOut
+        readonly property Action keySound: toggleKeySoundAction
+        readonly property Action help: helpAction
+        readonly property Action about: showAboutAction
+    }
 
     /**
      * Optional IBM style audio for the whole window.  Kept here rather than
@@ -56,7 +121,31 @@ ApplicationWindow {
         clickEnabled: appSettings.keyClick
         bellEnabled: appSettings.bell
         clickVolume: appSettings.keyClickVolume
+        clickSource: SoundLogic.sampleSource(appSettings.keyClickSound)
         bellVolume: appSettings.bellVolume
+    }
+
+    /**
+     * The HELP input: PF1 and the Help menu first try to open the topic
+     * field right in the PF panel on the glass (the way a mainframe let
+     * you type into its own legend area).  A blank topic becomes
+     * `man -k .` (list every page, the way CMS HELP with no operand
+     * listed the command set), anything else opens that page.  When the
+     * legend is not printed there is no cell to type into, and the
+     * dialog below takes over.
+     */
+    HelpDialog {
+        id: helpDialog
+        // Dress it like the machine: profile phosphor, screen font.
+        bgColor: appSettings.backgroundColor
+        fgColor: appSettings.fontColor
+        uiFontFamily: appSettings.terminalFontFamily
+        onSubmitted: function(topic) { terminalWindow.submitHelpTopic(topic) }
+    }
+
+    /** Turn a HELP topic into the man command the terminal runs. */
+    function submitHelpTopic(topic) {
+        terminalTabs.sendTextToCurrent(PfKeys.helpCommand(topic))
     }
 
     property real normalizedWindowScale: 1024 / ((0.5 * width + 0.5 * height))
@@ -103,9 +192,21 @@ ApplicationWindow {
         // F11 (Windows/Linux) or Cmd+Ctrl+F (macOS): the native binding on
         // every platform, so it works whether or not a menu bar is showing.
         shortcut: seq("fullscreen")
-        onTriggered: fullscreen = !fullscreen
+        // Toggle against the real window state: the green button can enter
+        // full screen without setting our flag, and leaving that way can
+        // leave the flag stuck on.  Whatever path is taken, `visibility`
+        // ends up truthful, which is what the chrome rules read.
+        onTriggered: {
+            if (isFullscreen) {
+                fullscreen = false
+                visibility = Window.Windowed
+            } else {
+                fullscreen = true
+                visibility = Window.FullScreen
+            }
+        }
         checkable: true
-        checked: fullscreen
+        checked: isFullscreen
     }
     Action {
         id: newWindowAction
@@ -169,6 +270,34 @@ ApplicationWindow {
         shortcut: seq("zoomOut")
         onTriggered: appSettings.decrementScaling()
     }
+    // The physical spellings of "bigger": Qt's ZoomIn binding only ever
+    // matches an unshifted "+" key, a US "+" arrives as Ctrl+Shift+'+'
+    // and "=" as Ctrl+'=' -- and on direct-Plus / numpad keyboards the
+    // plain Ctrl+'+' press is the one that works.  They are built with
+    // Instantiator, NOT Repeater: Repeater refuses non-Item delegates
+    // ("Delegate must be of Item type") so the Shortcuts it appeared to
+    // declare were never created at all.  Application context, so they
+    // still match in full screen where the menu Action's window context
+    // can fail to resolve; when both are live for one sequence Qt
+    // prefers the Action, so the overlap is safe (see zoomSpellings).
+    Instantiator {
+        model: Platform.zoomSpellings(Qt.platform.os, "zoomIn")
+        delegate: Shortcut {
+            required property string modelData
+            sequence: modelData
+            context: Qt.ApplicationShortcut
+            onActivated: zoomIn.trigger()
+        }
+    }
+    Instantiator {
+        model: Platform.zoomSpellings(Qt.platform.os, "zoomOut")
+        delegate: Shortcut {
+            required property string modelData
+            sequence: modelData
+            context: Qt.ApplicationShortcut
+            onActivated: zoomOut.trigger()
+        }
+    }
     Action {
         id: showAboutAction
         text: qsTr("About")
@@ -189,6 +318,42 @@ ApplicationWindow {
         text: qsTr("Close Tab")
         shortcut: seq("closeTab")
         onTriggered: terminalTabs.closeTab(terminalTabs.currentIndex)
+    }
+    Action {
+        id: helpAction
+        text: qsTr("Help…")
+        // Type the topic straight into the PF HELP cell on the glass;
+        // with the legend hidden, fall back to the dialog.
+        onTriggered: {
+            if (!terminalTabs.requestHelpInput())
+                helpDialog.openForHelp()
+        }
+    }
+    Action {
+        id: splitVerticalAction
+        text: qsTr("Split Vertical")
+        onTriggered: terminalTabs.split(1)
+    }
+    Action {
+        id: splitHorizontalAction
+        text: qsTr("Split Horizontal")
+        onTriggered: terminalTabs.split(2)
+    }
+    Action {
+        id: toggleKeySoundAction
+        text: qsTr("Key Click Sound")
+        checkable: true
+        checked: appSettings.keyClick
+        // trigger() flips `checked` first; SoundLogic also arms the master
+        // audio gate when the click turns on, so it is actually audible.
+        onTriggered: {
+            var s = SoundLogic.toggleKeyClick({
+                keyClick: !checked,
+                audioEnabled: appSettings.audioEnabled
+            })
+            appSettings.keyClick = s.keyClick
+            appSettings.audioEnabled = s.audioEnabled
+        }
     }
     Shortcut {
         sequence: appSettings.isMacOS ? "Meta+1" : "Alt+1"
@@ -239,13 +404,16 @@ ApplicationWindow {
     /***************************************************************************
     * IBM 3270 style PF / PA keys.
     *
-    * One Shortcut per slot, scoped to this window.  A slot whose function is
-    * "Off" keeps its Shortcut *disabled*, which is precisely what lets the raw
-    * F-key fall through to the shell untouched; anything else is claimed here
-    * before the terminal widget ever sees it.
+    * One Shortcut per slot, scoped to this window.  A slot claims its key
+    * only while the PF panel is showing: with the panel hidden the raw
+    * F-keys fall through to the shell untouched (nothing changes for
+    * anyone who never turned the panel on), a slot whose function is "Off"
+    * never claims anything, and everything else is claimed here before the
+    * terminal widget ever sees it.
     *
-    * The legend these keys belong to is drawn by PfKeyBar inside the CRT
-    * shader input, and it deliberately has no mouse handling at all.
+    * The legend these keys belong to is printed by PfKeyBar on its own
+    * strip of chassis below the CRT (see TerminalTabs.qml), and it
+    * deliberately has no mouse handling at all.
     ***************************************************************************/
     Instantiator {
         model: appSettings.pfAssignments.length
@@ -253,7 +421,8 @@ ApplicationWindow {
             sequence: index < appSettings.pfAssignments.length
                       ? appSettings.pfAssignments[index].key : ""
             context: Qt.WindowShortcut
-            enabled: index < appSettings.pfAssignments.length
+            enabled: appSettings.showPfKeys
+                     && index < appSettings.pfAssignments.length
                      && PfKeys.intercepts(appSettings.pfAssignments[index])
             onActivated: terminalWindow.dispatchPfAction(index)
         }
@@ -278,8 +447,10 @@ ApplicationWindow {
         if (action.kind === "term") {
             // Attention (Ctrl+C), Erase Input (Ctrl+U) and user macros all
             // travel the same way: straight into the active terminal.
+            // FILEL and XEDIT resolve per platform first (ls/dir, vi/notepad).
             var text = action.id === "sendText"
-                    ? PfKeys.macroText(assignment.payload) : action.payload
+                    ? PfKeys.macroText(assignment.payload)
+                    : (PfKeys.commandFor(action.id, Qt.platform.os) || action.payload)
             terminalTabs.sendTextToCurrent(text)
             return
         }
@@ -297,7 +468,22 @@ ApplicationWindow {
         case "newTab":      newTabAction.trigger(); break
         case "closeTab":    closeTabAction.trigger(); break
         case "fullscreen":  fullscreenAction.trigger(); break
+        // The View menu's zoom, bindable to a PF key: same rungs, so the
+        // legend and the keyboard never disagree about size.
+        case "bigger":      zoomIn.trigger(); break
+        case "smaller":     zoomOut.trigger(); break
         case "settings":    showsettingsAction.trigger(); break
+        case "help":        helpAction.trigger(); break
+        case "saveProfile":
+            // Nothing active yet: bring the profile panel up, where the
+            // name prompt explains itself; otherwise it saved silently.
+            if (!appSettings.saveActiveProfile())
+                showsettingsAction.trigger()
+            break
+        case "quit":        quitAction.trigger(); break
+        case "splitVertical":   splitVerticalAction.trigger(); break
+        case "splitHorizontal": splitHorizontalAction.trigger(); break
+        case "toggleKeySound":  toggleKeySoundAction.trigger(); break
         case "copy":        copyAction.trigger(); break
         case "paste":       pasteAction.trigger(); break
         default: break
@@ -308,6 +494,7 @@ ApplicationWindow {
         id: terminalTabs
         width: parent.width
         height: (parent.height + Math.abs(y))
+        onHelpSubmitted: function(topic) { terminalWindow.submitHelpTopic(topic) }
     }
     Loader {
         anchors.centerIn: parent

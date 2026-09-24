@@ -24,7 +24,7 @@ mkdir -p "$BUILD_DIR"
 rm -rf "$APPDIR"
 pushd "$BUILD_DIR"
 
-qmake "$REPO_ROOT/cool-retro-term.pro"
+qmake "$REPO_ROOT/nostalgic-terminal.pro"
 make -j"$(nproc)"
 
 # Install targets from subprojects (the top-level install only installs the desktop file).
@@ -71,13 +71,13 @@ export LINUXDEPLOY_EXCLUDED_LIBRARIES="libmysqlclient.so;libqsqlmimer.so;libqsql
 
 "$LINUXDEPLOY" \
     --appdir "$APPDIR" \
-    -e "$APPDIR/usr/bin/cool-retro-term" \
-    -i "$REPO_ROOT/app/icons/256x256/cool-retro-term.png" \
-    -d "$REPO_ROOT/cool-retro-term.desktop" \
+    -e "$APPDIR/usr/bin/nostalgic-terminal" \
+    -i "$REPO_ROOT/app/icons/256x256/nostalgic-terminal.png" \
+    -d "$REPO_ROOT/nostalgic-terminal.desktop" \
     --plugin qt \
     --output appimage
 
 APPIMAGE_PATH="$(ls -1 ./*.AppImage | head -n 1)"
-APPIMAGE_OUT="cool-retro-term-${VERSION}.AppImage"
+APPIMAGE_OUT="nostalgic-terminal-${VERSION}.AppImage"
 mv "$APPIMAGE_PATH" "$OLD_CWD/$APPIMAGE_OUT"
 popd

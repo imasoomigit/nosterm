@@ -1,4 +1,4 @@
-Source: cool-retro-term
+Source: nostalgic-terminal
 Maintainer: Jeka Der <jekader@gmail.com>
 Section: x11
 Priority: optional
@@ -11,7 +11,7 @@ Build-Depends: debhelper (>= 9), qmlscene,
  qml-module-qtgraphicaleffects, qml-module-qtquick-dialogs,
  qml-module-qtquick-localstorage, qml-module-qtquick-window2
 
-Package: cool-retro-term
+Package: nostalgic-terminal
 Architecture: any
 Replaces: cool-old-term
 Provides: x-terminal-emulator
@@ -19,6 +19,6 @@ Depends: qml-module-qtquick-controls, qml-module-qtgraphicaleffects,
  qml-module-qtquick-dialogs, qml-module-qtquick-localstorage,
  qml-module-qtquick-window2, ${shlibs:Depends}, ${misc:Depends}
 Description: terminal emulator which mimics old screens
- cool-retro-term is a terminal emulator which mimics the look and feel
+ nostalgic-terminal is a terminal emulator which mimics the look and feel
  of the old cathode tube screens. It has been designed to be eye-candy,
  customizable, and reasonably lightweight.

@@ -48,6 +48,37 @@ ScrollView {
         return 0
     }
 
+    /** The legend text as it prints: the phosphor, unless coloured. */
+    readonly property color legendText: appSettings.legendTextColor !== ""
+            ? appSettings.legendTextColor : appSettings.fontColor
+    /** The arrow as it prints: the text's colour, shaded to 60%. */
+    readonly property color legendArrow: appSettings.legendArrowColor !== ""
+            ? appSettings.legendArrowColor
+            : Qt.rgba(legendText.r, legendText.g, legendText.b, 0.6)
+
+    /**
+     * The legend's font choices: the screen's own face first (family ""),
+     * then every face the machine offers.  Built as plain objects so one
+     * ComboBox can show a label but store the family.
+     */
+    function legendFontEntries() {
+        var entries = [{ text: qsTr("(same as the screen)"), name: "" }]
+        var list = appSettings.filteredFontList
+        for (var i = 0; i < list.count; i++)
+            entries.push({ text: list.get(i).text, name: list.get(i).name })
+        return entries
+    }
+
+    /** Index of the family the legend is set to, "" included. */
+    function legendFontIndexOf() {
+        var entries = legendFontEntries()
+        for (var i = 0; i < entries.length; i++) {
+            if (entries[i].name === appSettings.legendFontFamily)
+                return i
+        }
+        return 0
+    }
+
     ColumnLayout {
         width: retroTab.availableWidth
         spacing: 12
@@ -64,7 +95,7 @@ ScrollView {
 
                 CheckBox {
                     objectName: "nostalgicModeCheckBox"
-                    text: qsTr("Nostalgic mode: no menu bar, no tab bar, no context menu")
+                    text: qsTr("Nostalgic mode: full screen shows nothing; menu and right-click when windowed")
                     checked: appSettings.nostalgicMode
                     onCheckedChanged: appSettings.nostalgicMode = checked
                 }
@@ -76,7 +107,11 @@ ScrollView {
                     text: qsTr("Nothing on screen suggests a graphical interface. "
                                + "Everything is driven from the keyboard: "
                                + "settings %1, new window %2, next window %3, "
-                               + "close window %4, fullscreen %5, quit %6.")
+                               + "close window %4, fullscreen %5, quit %6. "
+                               + "Outside full screen the menu bar and the "
+                               + "right-click menu are there for the mouse; "
+                               + "in full screen touch the top edge to peek "
+                               + "at the menu.")
                         .arg(retroTab.keyMap.settings)
                         .arg(retroTab.keyMap.newWindow)
                         .arg(retroTab.keyMap.nextWindow)
@@ -98,6 +133,169 @@ ScrollView {
                     opacity: 0.75
                     text: qsTr("The legend is part of the display, not a widget: "
                                + "it cannot be clicked or focused, only read.")
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    opacity: 0.75
+                    text: qsTr("Profiles carry the mainframe setup as well as "
+                               + "colors and effects: the legend, the PF/PA "
+                               + "assignments, the key click and bell, the "
+                               + "cursor and the line highlight. The built-in "
+                               + "\"IUT-MarkazMohasebat\" profile switches all "
+                               + "of them on at once.")
+                }
+
+                CheckBox {
+                    objectName: "shellAliasesCheckBox"
+                    text: qsTr("CMS command aliases in the shell profile (FILEL, COPYFILE, ...)")
+                    checked: appSettings.shellAliases
+                    onCheckedChanged: appSettings.shellAliases = checked
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    opacity: 0.75
+                    text: qsTr("One marked block is written to ~/.bashrc "
+                               + "(plus ~/.zshrc and the profile files that "
+                               + "already exist; on Windows that same file is "
+                               + "the Git Bash profile), so FILEL, LISTFILE, "
+                               + "COPYFILE, ERASE, RENAME, TYPE, ACCESS, "
+                               + "RELEASE and FORMAT work as typed commands. "
+                               + "Untick to remove the block.")
+                }
+            }
+        }
+
+        // LEGEND ////////////////////////////////////////////////////////////
+        GroupBox {
+            title: qsTr("Legend")
+            Layout.fillWidth: true
+            padding: appSettings.defaultMargin
+
+            GridLayout {
+                anchors.fill: parent
+                columns: 4
+                columnSpacing: 8
+                rowSpacing: 6
+
+                // The type first (the face, then the size), colours below.
+                Label { text: qsTr("Font"); font.bold: true }
+                ComboBox {
+                    objectName: "legendFontComboBox"
+                    Layout.columnSpan: 3
+                    Layout.fillWidth: true
+                    textRole: "text"
+                    model: retroTab.legendFontEntries()
+                    currentIndex: retroTab.legendFontIndexOf()
+                    onActivated: function(index) {
+                        appSettings.legendFontFamily =
+                                retroTab.legendFontEntries()[index].name
+                        // The pick replaced the binding; put it back.
+                        currentIndex = Qt.binding(function() {
+                            return retroTab.legendFontIndexOf()
+                        })
+                    }
+                }
+
+                Label { text: qsTr("Size"); font.bold: true }
+                Slider {
+                    objectName: "legendFontScaleSlider"
+                    Layout.columnSpan: 2
+                    Layout.fillWidth: true
+                    from: 0.4
+                    to: 3.0
+                    stepSize: 0.05
+                    value: appSettings.legendFontScale
+                    onValueChanged: {
+                        // A drag writes imperatively and replaces the
+                        // declared binding; restore it so presets and the
+                        // reset button still move this slider.  Changes
+                        // that came from the binding itself need neither.
+                        if (value === appSettings.legendFontScale)
+                            return
+                        appSettings.legendFontScale = value
+                        value = Qt.binding(function() {
+                            return appSettings.legendFontScale
+                        })
+                    }
+                }
+                Label {
+                    objectName: "legendFontScaleLabel"
+                    text: "×" + appSettings.legendFontScale.toFixed(2)
+                            + "  (" + Math.round(appSettings.terminalFontPixelSize
+                                                 * appSettings.legendFontScale)
+                            + " px)"
+                }
+
+                Label { text: qsTr("Text"); font.bold: true }
+                Label { text: qsTr("Background"); font.bold: true }
+                Label { text: qsTr("Arrow  >>"); font.bold: true }
+                Label { text: qsTr("Arrow background"); font.bold: true }
+
+                ColorButton {
+                    objectName: "legendTextColorButton"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 32
+                    name: qsTr("Text")
+                    color: retroTab.legendText
+                    onColorSelected: function(c) { appSettings.legendTextColor = c }
+                }
+                ColorButton {
+                    objectName: "legendTextBgColorButton"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 32
+                    name: qsTr("Background")
+                    color: appSettings.legendTextBgColor
+                    onColorSelected: function(c) { appSettings.legendTextBgColor = c }
+                }
+                ColorButton {
+                    objectName: "legendArrowColorButton"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 32
+                    name: qsTr("Arrow  >>")
+                    color: retroTab.legendArrow
+                    onColorSelected: function(c) { appSettings.legendArrowColor = c }
+                }
+                ColorButton {
+                    objectName: "legendArrowBgColorButton"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 32
+                    name: qsTr("Arrow background")
+                    color: appSettings.legendArrowBgColor
+                    onColorSelected: function(c) { appSettings.legendArrowBgColor = c }
+                }
+
+                Label {
+                    Layout.columnSpan: 4
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    opacity: 0.75
+                    text: qsTr("The on-glass PF/PA legend: its face and "
+                               + "size (the screen's own until changed, "
+                               + "the size a coefficient of the screen "
+                               + "font), and the colours of the key "
+                               + "identity, its function and the >> "
+                               + "between them. Text colours follow the "
+                               + "screen's phosphor until set; the "
+                               + "backgrounds are clear until set, so "
+                               + "nothing but the words prints.")
+                }
+
+                Button {
+                    objectName: "resetLegendButton"
+                    Layout.columnSpan: 4
+                    text: qsTr("Reset the legend to the defaults")
+                    onClicked: {
+                        appSettings.legendFontFamily = ""
+                        appSettings.legendFontScale = 1.0
+                        appSettings.legendTextColor = ""
+                        appSettings.legendTextBgColor = "#00000000"
+                        appSettings.legendArrowColor = ""
+                        appSettings.legendArrowBgColor = "#00000000"
+                    }
                 }
             }
         }
@@ -218,65 +416,8 @@ ScrollView {
             }
         }
 
-        // SOUND //////////////////////////////////////////////////////////////
-        GroupBox {
-            title: qsTr("Sound")
-            Layout.fillWidth: true
-            padding: appSettings.defaultMargin
-
-            GridLayout {
-                anchors.fill: parent
-                columns: 3
-                columnSpacing: 8
-                rowSpacing: 6
-
-                CheckBox {
-                    objectName: "audioEnabledCheckBox"
-                    Layout.columnSpan: 3
-                    text: qsTr("Enable audible feedback")
-                    checked: appSettings.audioEnabled
-                    onCheckedChanged: appSettings.audioEnabled = checked
-                }
-
-                CheckBox {
-                    objectName: "keyClickCheckBox"
-                    text: qsTr("Key click")
-                    enabled: appSettings.audioEnabled
-                    checked: appSettings.keyClick
-                    onCheckedChanged: appSettings.keyClick = checked
-                }
-                Slider {
-                    id: keyClickVolume
-                    Layout.fillWidth: true
-                    Layout.columnSpan: 2
-                    enabled: appSettings.audioEnabled && appSettings.keyClick
-                    from: 0.0
-                    to: 1.0
-                    stepSize: 0.05
-                    value: appSettings.keyClickVolume
-                    onValueChanged: appSettings.keyClickVolume = value
-                }
-
-                CheckBox {
-                    objectName: "bellCheckBox"
-                    text: qsTr("Terminal bell")
-                    enabled: appSettings.audioEnabled
-                    checked: appSettings.bell
-                    onCheckedChanged: appSettings.bell = checked
-                }
-                Slider {
-                    id: bellVolume
-                    Layout.fillWidth: true
-                    Layout.columnSpan: 2
-                    enabled: appSettings.audioEnabled && appSettings.bell
-                    from: 0.0
-                    to: 1.0
-                    stepSize: 0.05
-                    value: appSettings.bellVolume
-                    onValueChanged: appSettings.bellVolume = value
-                }
-            }
-        }
+        // SOUND now lives with the general options: it is a keyboard /
+        // feedback choice, not part of the look (SettingsGeneralTab).
 
         // CURSOR AND ACTIVE LINE /////////////////////////////////////////////
         GroupBox {

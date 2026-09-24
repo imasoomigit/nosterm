@@ -23,6 +23,7 @@ import QtQuick.Layouts 1.1
 import QtQml 2.0
 
 import "Components"
+import "logic/colormode.js" as ColorMode
 
 ColumnLayout {
     GroupBox {
@@ -179,18 +180,58 @@ ColumnLayout {
         padding: appSettings.defaultMargin
         ColumnLayout {
             anchors.fill: parent
-            ColumnLayout {
+
+            RowLayout {
                 Layout.fillWidth: true
-                CheckableSlider {
-                    name: qsTr("Chroma Color")
-                    onNewValue: function(newValue) { appSettings.chromaColor = newValue }
-                    value: appSettings.chromaColor
+                Label {
+                    text: qsTr("Colour mode")
                 }
-                CheckableSlider {
-                    name: qsTr("Saturation Color")
-                    onNewValue: function(newValue) { appSettings.saturationColor = newValue }
-                    value: appSettings.saturationColor
-                    enabled: appSettings.chromaColor !== 0
+                ComboBox {
+                    id: colorModeComboBox
+                    Layout.fillWidth: true
+                    model: [qsTr("Monochrome"), qsTr("TTY Colours")]
+                    currentIndex: ColorMode.modeIndex(appSettings.colorMode)
+                    onActivated: function(index) {
+                        appSettings.colorMode = ColorMode.modeAt(index)
+                        // The imperative write above dropped the binding;
+                        // put it back so loading a profile follows through.
+                        currentIndex = Qt.binding(function() {
+                            return ColorMode.modeIndex(appSettings.colorMode)
+                        })
+                    }
+                }
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                opacity: 0.8
+                text: ColorMode.normalize(appSettings.colorMode) === ColorMode.MODE_COLOR
+                      ? qsTr("Coloured output prints in its own colour; plain text keeps the phosphor.")
+                      : qsTr("One phosphor: each console colour is read as the luminance it carried.")
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Label {
+                    text: qsTr("Phosphor")
+                }
+                ComboBox {
+                    id: phosphorBox
+                    Layout.fillWidth: true
+                    model: ColorMode.phosphorNames()
+                    currentIndex: ColorMode.phosphorIndex(appSettings._fontColor,
+                                                          appSettings._backgroundColor)
+                    onActivated: function(index) {
+                        // A preset is the Font colour on black, so the frame,
+                        // the cursor and the legend all pick up the phosphor;
+                        // the Font picker below still allows any custom shade.
+                        var preset = ColorMode.PHOSPHORS[index]
+                        appSettings._fontColor = preset.fontColor
+                        appSettings._backgroundColor = preset.backgroundColor
+                        currentIndex = Qt.binding(function() {
+                            return ColorMode.phosphorIndex(appSettings._fontColor,
+                                                           appSettings._backgroundColor)
+                        })
+                    }
                 }
             }
             RowLayout {
@@ -216,6 +257,11 @@ ColumnLayout {
                     onColorSelected: appSettings._frameColor = color
                     color: appSettings._frameColor
                 }
+            }
+            CheckableSlider {
+                name: qsTr("Saturation Color")
+                onNewValue: function(newValue) { appSettings.saturationColor = newValue }
+                value: appSettings.saturationColor
             }
         }
     }

@@ -104,3 +104,68 @@ test('usableSequences filters out empty entries', () => {
   assert.deepEqual(Object.keys(out).sort(), ['newWindow', 'quit'])
   assert.equal(out.newWindow, 'Meta+N')
 })
+
+test('zoom in: the standard binding plus every physical spelling', () => {
+  // The menu shows the conventional binding...
+  assert.equal(Platform.sequence('mac', 'zoomIn'), 'StandardKey.ZoomIn')
+  assert.equal(Platform.sequence('x11', 'zoomIn'), 'Ctrl++')
+
+  // ...while the window binds what a real keyboard actually sends.
+  // "+" on a US layout = Ctrl+Shift+'+' , "=" = Ctrl+'=' .  mac gets the
+  // same treatment with Cmd.
+  assert.deepEqual(Platform.alternates('x11', 'zoomIn'), ['Ctrl+Shift++', 'Ctrl+='])
+  assert.deepEqual(Platform.alternates('wayland', 'zoomIn'), ['Ctrl+Shift++', 'Ctrl+='])
+  assert.deepEqual(Platform.alternates('osx', 'zoomIn'), ['Meta+Shift++', 'Meta+='])
+})
+
+test('zoomSpellings: every key that must hold a live zoom binding', () => {
+  // The floor under the menu Action: the standard spelling included, so
+  // the key still works when the Action's window context cannot resolve
+  // (full screen), plus every physical spelling of "+" and "=".
+  assert.deepEqual(Platform.zoomSpellings('x11', 'zoomIn'),
+    ['Ctrl++', 'Ctrl+Shift++', 'Ctrl+='])
+  assert.deepEqual(Platform.zoomSpellings('osx', 'zoomIn'),
+    ['Meta++', 'Meta+Shift++', 'Meta+=', 'Ctrl++', 'Ctrl+Shift++', 'Ctrl+='])
+  assert.deepEqual(Platform.zoomSpellings('x11', 'zoomOut'), ['Ctrl+-'])
+  assert.deepEqual(Platform.zoomSpellings('osx', 'zoomOut'), ['Meta+-', 'Ctrl+-'])
+  assert.deepEqual(Platform.zoomSpellings('x11', 'newWindow'), [])
+  assert.deepEqual(Platform.zoomSpellings('x11', 'doesNotExist'), [])
+
+  for (const os of ['osx', 'win32', 'x11']) {
+    const spellings = Platform.zoomSpellings(os, 'zoomIn')
+    assert.equal(new Set(spellings).size, spellings.length,
+      `${os} spellings unique`)
+    // No two spellings can match one keypress: each uses a different key
+    // or a different modifier set ("Ctrl++" vs "Ctrl+Shift++" etc.).
+    for (const s of spellings)
+      assert.ok(s.startsWith('Ctrl+') || s.startsWith('Meta+'),
+        `${os} spelling is a plain key sequence`)
+  }
+
+  // macOS carries the Ctrl family on top of Cmd (the plain Ctrl chord is
+  // the one macOS itself never claims), and that family is exactly the
+  // Linux floor -- one code path covers both.
+  const macCtrl = Platform.zoomSpellings('osx', 'zoomIn')
+    .filter(s => s.startsWith('Ctrl+'))
+  assert.deepEqual(macCtrl, Platform.zoomSpellings('x11', 'zoomIn'))
+  assert.deepEqual(Platform.zoomSpellings('osx', 'zoomOut').filter(
+    s => s.startsWith('Ctrl+')), Platform.zoomSpellings('x11', 'zoomOut'))
+})
+
+test('zoom alternates never duplicate the primary binding', () => {
+  for (const os of ['osx', 'win32', 'x11']) {
+    const primary = Platform.sequence(os, 'zoomIn')
+    const alts = Platform.alternates(os, 'zoomIn')
+    assert.ok(alts.length > 0, `${os} has alternates`)
+    assert.ok(!alts.includes(primary), `${os} primary not repeated`)
+    // And no two spellings can match one keypress: every alternate uses
+    // either a different key or a different modifier set.
+    assert.equal(new Set(alts).size, alts.length, `${os} alternates unique`)
+  }
+})
+
+test('only zoomIn carries alternates', () => {
+  assert.deepEqual(Platform.alternates('x11', 'zoomOut'), [])
+  assert.deepEqual(Platform.alternates('x11', 'newWindow'), [])
+  assert.deepEqual(Platform.alternates('x11', 'doesNotExist'), [])
+})

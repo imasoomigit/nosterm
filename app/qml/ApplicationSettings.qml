@@ -24,7 +24,11 @@ import CoolRetroTerm 1.0
 import "utils.js" as Utils
 import "logic/defaults.js" as RetroDefaults
 import "logic/pfkeys.js" as PfKeys
+import "logic/ibmprofile.js" as IbmProfile
 import "logic/chrome.js" as Chrome
+import "logic/aliases.js" as Aliases
+import "logic/profiles.js" as Profiles
+import "logic/colormode.js" as ColorMode
 
 QtObject {
     readonly property string version: appVersion
@@ -46,11 +50,20 @@ QtObject {
     property bool showMenubar: false
 
     // RETRO / IBM EXTRAS /////////////////////////////////////////////////////
-    // Nostalgic mode is the zero chrome experience: no menu bar, no tab strip,
-    // no context menu, no size overlay.  Everything stays reachable from the
-    // keyboard, so nothing on screen ever hints that there is a GUI behind the
-    // phosphor.
+    // Nostalgic mode is the chrome contract from logic/chrome.js: full screen
+    // shows nothing at all - no menu, no tab strip, no context menu, no size
+    // overlay - so nothing hints there is a GUI behind the phosphor and every
+    // action stays on the keyboard (touch the top edge to peek at the menu).
+    // Windowed, the menu bar and the right-click menu are back for the mouse
+    // and stay until full screen is entered again.
     property bool nostalgicMode: true
+
+    // Keep the CMS command aliases (FILEL, COPYFILE, ...) in the shell
+    // profile files: ~/.bashrc everywhere, ~/.zshrc on macOS and every
+    // profile file that already exists.  On Windows the very same
+    // ~/.bashrc is the Git Bash profile, which is how the aliases ride
+    // along as a top up over Git Bash.  Unticking strips the block.
+    property bool shellAliases: true
 
     // On screen IBM 3270 style PF/PA key legend.
     property bool showPfKeys: false
@@ -67,6 +80,9 @@ QtObject {
     property bool audioEnabled: false
     property bool keyClick: true
     property real keyClickVolume: 0.5
+    // Which bundled keyboard tick plays: the factory one, two deeper
+    // picks -- or, with keyClick false, nothing at all.
+    property string keyClickSound: "tick"  // "tick" | "deep" | "deeper"
     property bool bell: true
     property real bellVolume: 0.5
 
@@ -76,6 +92,20 @@ QtObject {
 
     // Block / half block cursor, as on 3270 and PC BIOS screens.
     property string cursorStyle: "block"   // "block" | "half"
+
+    // Colours of the on-glass PF/PA legend (see PfKeyBar.qml): the two
+    // foregrounds take "" meaning "the phosphor colour" -- the arrow
+    // shades itself down from it -- and the backgrounds are clear by
+    // default, so a default panel prints exactly the text it always did.
+    property string legendTextColor: ""
+    property string legendTextBgColor: "#00000000"
+    property string legendArrowColor: ""
+    property string legendArrowBgColor: "#00000000"
+    // Type of the legend: "" follows the screen's own face; the scale is
+    // a coefficient of the screen font's pixel size (1.0 = the same size
+    // as the terminal's output).
+    property string legendFontFamily: ""
+    property real legendFontScale: 1.0
 
     /**
      * Replace one PF/PA slot.  `patch` is merged over the existing entry and
@@ -157,6 +187,14 @@ QtObject {
     property real bloom: 0.55
 
     property real chromaColor: 0.25
+    /**
+     * What the glass does with the console's colours: "monochrome"
+     * simulates a single phosphor (every colour is read as the luminance
+     * it carried), "color" lets the tty's own hues through.  See
+     * logic/colormode.js for the two names and for how a profile recorded
+     * before this field existed is read.
+     */
+    property string colorMode: "monochrome"
     property real saturationColor: 0.25
 
     property real jitter: 0.2
@@ -211,6 +249,26 @@ QtObject {
         baseFontScaling: baseFontScaling
     }
 
+    // The computed screen font, mirrored for UI that has to read like the
+    // screen: the off-side PF panel and the retro-styled dialogs.  Low
+    // resolution fonts are drawn scaled to the target height, so the raw
+    // signal pixelSize alone would not match what the terminal shows.
+    property string terminalFontFamily: "monospace"
+    property real terminalFontPixelSize: 12
+    property real terminalFontWidth: 1.0
+
+    // QtObject has no default property: the mirror has to hang off an
+    // explicit child property, exactly like fontManager and storage.
+    property Connections fontMirror: Connections {
+        target: fontManager
+        function onTerminalFontChanged(fontFamily, pixelSize, lineSpacing,
+                                       screenScaling, fontWidth) {
+            terminalFontFamily = fontFamily
+            terminalFontPixelSize = pixelSize * screenScaling
+            terminalFontWidth = fontWidth
+        }
+    }
+
     signal initializedSettings
 
     function incrementScaling() {
@@ -243,10 +301,12 @@ QtObject {
             "showTerminalSize": showTerminalSize,
             "fontScaling": fontScaling,
             "showMenubar": showMenubar,
+            "shellAliases": shellAliases,
             "bloomQuality": bloomQuality,
             "burnInQuality": burnInQuality,
             "useCustomCommand": useCustomCommand,
             "customCommand": customCommand,
+            "colorMode": colorMode,
 
             // Retro / IBM extras.  RetroDefaults.merge() is the single place
             // that validates them, and it is covered by tests/logic.
@@ -256,11 +316,18 @@ QtObject {
             "audioEnabled": audioEnabled,
             "keyClick": keyClick,
             "keyClickVolume": keyClickVolume,
+            "keyClickSound": keyClickSound,
             "bell": bell,
             "bellVolume": bellVolume,
             "highlightActiveLine": highlightActiveLine,
             "activeLineOpacity": activeLineOpacity,
-            "cursorStyle": cursorStyle
+            "cursorStyle": cursorStyle,
+            "legendTextColor": legendTextColor,
+            "legendTextBgColor": legendTextBgColor,
+            "legendArrowColor": legendArrowColor,
+            "legendArrowBgColor": legendArrowBgColor,
+            "legendFontFamily": legendFontFamily,
+            "legendFontScale": legendFontScale
         }
         return stringify(settings)
     }
@@ -273,6 +340,7 @@ QtObject {
             "horizontalSync": horizontalSync,
             "staticNoise": staticNoise,
             "chromaColor": chromaColor,
+            "colorMode": colorMode,
             "saturationColor": saturationColor,
             "screenCurvature": screenCurvature,
             "glowingLine": glowingLine,
@@ -295,6 +363,34 @@ QtObject {
             "screenRadius": _screenRadius,
             "frameColor": _frameColor,
             "frameShininess": _frameShininess
+        }
+
+        // The IBM extras travel with the profile too: PF/PA legend and
+        // assignments, sound, cursor and active-line band.  See
+        // RetroDefaults.pickIbmExtras for the exact set; nostalgicMode is
+        // deliberately not a profile field (chrome stays app-wide).
+        var extras = RetroDefaults.pickIbmExtras({
+            "showPfKeys": showPfKeys,
+            "pfKeys": pfKeys,
+            "audioEnabled": audioEnabled,
+            "keyClick": keyClick,
+            "keyClickVolume": keyClickVolume,
+            "keyClickSound": keyClickSound,
+            "bell": bell,
+            "bellVolume": bellVolume,
+            "highlightActiveLine": highlightActiveLine,
+            "activeLineOpacity": activeLineOpacity,
+            "cursorStyle": cursorStyle,
+            "legendTextColor": legendTextColor,
+            "legendTextBgColor": legendTextBgColor,
+            "legendArrowColor": legendArrowColor,
+            "legendArrowBgColor": legendArrowBgColor,
+            "legendFontFamily": legendFontFamily,
+            "legendFontScale": legendFontScale
+        })
+        for (var extraKey in extras) {
+            if (Object.prototype.hasOwnProperty.call(extras, extraKey))
+                profile[extraKey] = extras[extraKey]
         }
         return profile
     }
@@ -346,6 +442,8 @@ QtObject {
 
         showMenubar = settings.showMenubar !== undefined ? settings.showMenubar : showMenubar
 
+        shellAliases = settings.shellAliases !== undefined ? settings.shellAliases : shellAliases
+
         bloomQuality = settings.bloomQuality !== undefined ? settings.bloomQuality : bloomQuality
         burnInQuality = settings.burnInQuality
                 !== undefined ? settings.burnInQuality : burnInQuality
@@ -354,6 +452,12 @@ QtObject {
                 !== undefined ? settings.useCustomCommand : useCustomCommand
         customCommand = settings.customCommand
                 !== undefined ? settings.customCommand : customCommand
+
+        // The colour mode rides in both blobs, exactly like the IBM
+        // extras: the profile is the look and wins, this is the fallback
+        // for a profile too old to carry an opinion of its own.
+        colorMode = ColorMode.isValid(settings.colorMode) ? settings.colorMode
+                : colorMode
 
         // Retro / IBM extras: merge repairs types, falls back to the defaults
         // for anything missing and ignores keys it does not know about.
@@ -364,11 +468,66 @@ QtObject {
         audioEnabled = retro.audioEnabled
         keyClick = retro.keyClick
         keyClickVolume = retro.keyClickVolume
+        keyClickSound = retro.keyClickSound
         bell = retro.bell
         bellVolume = retro.bellVolume
         highlightActiveLine = retro.highlightActiveLine
         activeLineOpacity = retro.activeLineOpacity
         cursorStyle = retro.cursorStyle
+        legendTextColor = retro.legendTextColor
+        legendTextBgColor = retro.legendTextBgColor
+        legendArrowColor = retro.legendArrowColor
+        legendArrowBgColor = retro.legendArrowBgColor
+        legendFontFamily = retro.legendFontFamily
+        legendFontScale = retro.legendFontScale
+    }
+
+    // SHELL ALIAS BLOCK /////////////////////////////////////////////////////
+    /**
+     * Install (or refresh) the managed CMS alias block in every shell
+     * profile target for this platform.  Every decision - which files,
+     * which text, how to merge - lives in logic/aliases.js; this side
+     * only performs the I/O through the fileIO context object.
+     */
+    function syncShellAliases() {
+        var home = fileIO.homeUrl()
+        var exists = function (name) { return fileIO.exists(home + "/" + name) }
+        var names = Aliases.targets(Qt.platform.os, exists)
+        var text = Aliases.block(Qt.platform.os)
+
+        for (var i = 0; i < names.length; i++) {
+            var url = home + "/" + names[i]
+            var current = fileIO.read(url)
+            var updated = Aliases.upsert(current, text)
+            if (updated !== current) {
+                fileIO.write(url, updated)
+                if (verbose)
+                    console.log("CMS aliases written to " + url)
+            }
+        }
+    }
+
+    /**
+     * Remove every trace of the block (switching the setting off).  Files
+     * that do not exist read as "" and are left untouched.
+     */
+    function removeShellAliases() {
+        var home = fileIO.homeUrl()
+        var names = [".bashrc", ".zshrc", ".bash_profile", ".profile"]
+        for (var i = 0; i < names.length; i++) {
+            var url = home + "/" + names[i]
+            var current = fileIO.read(url)
+            var updated = Aliases.strip(current)
+            if (updated !== current)
+                fileIO.write(url, updated)
+        }
+    }
+
+    onShellAliasesChanged: {
+        if (shellAliases)
+            syncShellAliases()
+        else
+            removeShellAliases()
     }
 
     function loadProfileString(profileString) {
@@ -383,6 +542,12 @@ QtObject {
         flickering = settings.flickering !== undefined ? settings.flickering : flickering
         staticNoise = settings.staticNoise !== undefined ? settings.staticNoise : staticNoise
         chromaColor = settings.chromaColor !== undefined ? settings.chromaColor : chromaColor
+        // The colour mode is a look, so it belongs to the profile.  A
+        // profile saved before the field existed only carries the old
+        // chroma slider, and that is where the mode comes from then.
+        colorMode = ColorMode.isValid(settings.colorMode) ? settings.colorMode
+                : (settings.chromaColor !== undefined
+                   ? ColorMode.infer(settings.chromaColor) : colorMode)
         saturationColor = settings.saturationColor
                 !== undefined ? settings.saturationColor : saturationColor
         screenCurvature = settings.screenCurvature
@@ -417,6 +582,38 @@ QtObject {
         _frameShininess = settings.frameShininess !== undefined ? settings.frameShininess : _frameShininess
 
         blinkingCursor = settings.blinkingCursor !== undefined ? settings.blinkingCursor : blinkingCursor
+
+        applyProfileExtras(RetroDefaults.profileExtras(settings))
+
+        // A load is not a change: what composeProfileString() now answers
+        // is what the profile already holds, so the autosave must not turn
+        // the very act of choosing a profile into a write to it.
+        rebaseAutoSave()
+    }
+
+    /**
+     * Apply the IBM extras a profile specifies.  Fields the profile does not
+     * carry (every profile saved before this feature, and the older visual
+     * built-ins) keep their current value -- see defaults.profileExtras.
+     */
+    function applyProfileExtras(extras) {
+        if (extras.showPfKeys !== undefined)          showPfKeys = extras.showPfKeys
+        if (extras.pfKeys !== undefined)              pfKeys = extras.pfKeys
+        if (extras.audioEnabled !== undefined)        audioEnabled = extras.audioEnabled
+        if (extras.keyClick !== undefined)            keyClick = extras.keyClick
+        if (extras.keyClickVolume !== undefined)      keyClickVolume = extras.keyClickVolume
+        if (extras.keyClickSound !== undefined)       keyClickSound = extras.keyClickSound
+        if (extras.bell !== undefined)                bell = extras.bell
+        if (extras.bellVolume !== undefined)          bellVolume = extras.bellVolume
+        if (extras.highlightActiveLine !== undefined) highlightActiveLine = extras.highlightActiveLine
+        if (extras.activeLineOpacity !== undefined)   activeLineOpacity = extras.activeLineOpacity
+        if (extras.cursorStyle !== undefined)         cursorStyle = extras.cursorStyle
+        if (extras.legendTextColor !== undefined)     legendTextColor = extras.legendTextColor
+        if (extras.legendTextBgColor !== undefined)   legendTextBgColor = extras.legendTextBgColor
+        if (extras.legendArrowColor !== undefined)    legendArrowColor = extras.legendArrowColor
+        if (extras.legendArrowBgColor !== undefined)  legendArrowBgColor = extras.legendArrowBgColor
+        if (extras.legendFontFamily !== undefined)    legendFontFamily = extras.legendFontFamily
+        if (extras.legendFontScale !== undefined)     legendFontScale = extras.legendFontScale
     }
 
     function storeCustomProfiles() {
@@ -460,6 +657,8 @@ QtObject {
     function loadProfile(index) {
         var profile = profilesList.get(index)
         loadProfileString(profile.obj_string)
+        // Loading names the profile: from here on Save writes into it.
+        setActiveProfile(profile.text)
     }
 
     function appendCustomProfile(name, profileString) {
@@ -468,6 +667,208 @@ QtObject {
                                 "obj_string": profileString,
                                 "builtin": false
                             })
+    }
+
+    // ACTIVE PROFILE /////////////////////////////////////////////////////////
+    /**
+     * The profile Save writes to: the one that was loaded (from the list,
+     * the Profiles menu or --profile) or, failing that, the default.  ""
+     * means nothing is active yet, and Save has to ask for a name once.
+     */
+    property string activeProfileName: ""
+
+    /** The profile the app opens with.  "" = open on the stored snapshot. */
+    property string defaultProfileName: ""
+
+    /**
+     * Pristine copies of the built-ins, captured before any stored
+     * override is applied: what Reset puts back after a Save overwrote
+     * them.  Custom profiles have no entry here, so they do not reset.
+     */
+    property var factoryProfiles: ({})
+
+    /** Saved changes made to built-in profiles: name -> obj_string. */
+    property var builtinOverrides: ({})
+
+    function persistActiveProfile() {
+        storage.setSetting("_ACTIVE_PROFILE", activeProfileName)
+    }
+
+    function persistDefaultProfile() {
+        storage.setSetting("_DEFAULT_PROFILE", defaultProfileName)
+    }
+
+    function storeBuiltinOverrides() {
+        storage.setSetting("_BUILTIN_OVERRIDES", stringify(builtinOverrides))
+    }
+
+    /** Snapshot the built-ins exactly as they ship, before any override. */
+    function captureFactoryProfiles() {
+        factoryProfiles = Profiles.factoryMap(profilesList)
+    }
+
+    /** Re-apply the changes the user saved over the built-ins. */
+    function loadBuiltinOverrides() {
+        builtinOverrides = Profiles.parseOverrides(
+                    storage.getSetting("_BUILTIN_OVERRIDES"))
+        var changes = Profiles.overridesToApply(builtinOverrides, profilesList)
+        for (var i = 0; i < changes.length; i++) {
+            profilesList.setProperty(changes[i].index, "obj_string",
+                                      changes[i].obj_string)
+        }
+    }
+
+    /** Mark `name` active -- the Save target -- and remember it. */
+    function setActiveProfile(name) {
+        if (activeProfileName === name)
+            return
+        activeProfileName = name
+        persistActiveProfile()
+    }
+
+    /**
+     * The Save button: overwrite the active profile (or, with none, the
+     * default) with the current values.  No name prompt, ever, unless
+     * nothing at all is active -- and that ask happens only once, because
+     * the name it collects becomes the active profile.
+     *
+     * Returns false only in that last case: the caller then shows the
+     * name dialog (SettingsGeneralTab).
+     */
+    function saveActiveProfile() {
+        var name = Profiles.saveTargetName(profilesList, activeProfileName,
+                                            defaultProfileName)
+        if (name === "")
+            return false
+        return writeProfile(name, composeProfileString())
+    }
+
+    /** Save under a fresh name: the very first Save, when nothing is active. */
+    function saveAsNewProfile(name) {
+        if (!name)
+            return false
+        appendCustomProfile(name, composeProfileString())
+        storeCustomProfiles()
+        setActiveProfile(name)
+        return true
+    }
+
+    /** The one place a profile's contents are ever written. */
+    function writeProfile(name, profileString) {
+        var index = getProfileIndexByName(name)
+        if (index === -1)
+            return false
+        profilesList.setProperty(index, "obj_string", profileString)
+
+        if (profilesList.get(index).builtin) {
+            // Built-ins live in code and are rebuilt on every start: keep
+            // the change in the override map so it survives the restart.
+            builtinOverrides[name] = profileString
+            storeBuiltinOverrides()
+        } else {
+            storeCustomProfiles()
+        }
+        setActiveProfile(name)
+        return true
+    }
+
+    // LIVE AUTOSAVE //////////////////////////////////////////////////////////
+    /**
+     * Nothing the settings dialog changes may be lost to "I forgot to press
+     * Save".  A slow poll compares both composed blobs with the last ones
+     * written and rewrites only on a real difference, so a slider drag is
+     * one write at the end instead of one per tick, and a profile that was
+     * merely loaded is never rewritten (loading rebases the baseline).
+     *
+     * Both halves go down: the snapshot is what the next start shows, and
+     * the *profile* is what "saved as part of the profile" means -- but
+     * only when a profile is active, because with none the Save button is
+     * still the thing that asks for a name, once.
+     */
+    property string _autoSaveProfile: ""
+    property string _autoSaveSettings: ""
+
+    property Timer autoSaveTimer: Timer {
+        interval: 750
+        repeat: true
+        running: false
+        onTriggered: autoSaveTick()
+    }
+
+    /** What is on screen right now, recorded as "there is nothing to save". */
+    function rebaseAutoSave() {
+        _autoSaveProfile = composeProfileString()
+        _autoSaveSettings = composeSettingsString()
+    }
+
+    function autoSaveTick() {
+        var profile = composeProfileString()
+        var settings = composeSettingsString()
+        if (profile === _autoSaveProfile && settings === _autoSaveSettings)
+            return
+        _autoSaveProfile = profile
+        _autoSaveSettings = settings
+
+        storage.setSetting("_CURRENT_SETTINGS", settings)
+        storage.setSetting("_CURRENT_PROFILE", profile)
+
+        if (activeProfileName !== "")
+            writeProfile(activeProfileName, profile)
+    }
+
+    /**
+     * Point every future start at `name`; "" takes the default away
+     * again.  The values are brought in by the startup path, not from
+     * here -- this only records the choice.
+     */
+    function setDefaultProfile(name) {
+        var valid = (name && getProfileIndexByName(name) !== -1) ? name : ""
+        if (defaultProfileName === valid)
+            return
+        defaultProfileName = valid
+        persistDefaultProfile()
+    }
+
+    /**
+     * Put a built-in back exactly as it shipped: the stored override is
+     * dropped and the factory copy restored -- onto the screen as well
+     * when it is the active profile.  Custom profiles have no factory
+     * copy and do not reset.
+     */
+    function resetProfile(name) {
+        var factory = factoryProfiles ? factoryProfiles[name] : undefined
+        if (factory === undefined)
+            return false
+        var index = getProfileIndexByName(name)
+        if (index === -1)
+            return false
+        profilesList.setProperty(index, "obj_string", factory)
+        if (builtinOverrides[name] !== undefined) {
+            delete builtinOverrides[name]
+            storeBuiltinOverrides()
+        }
+        if (activeProfileName === name)
+            loadProfileString(factory)
+        return true
+    }
+
+    /**
+     * Drop a custom profile, releasing the active and default markers it
+     * may be carrying.  Built-ins cannot be removed.
+     */
+    function removeProfile(index) {
+        if (index < 0 || index >= profilesList.count)
+            return false
+        if (profilesList.get(index).builtin)
+            return false
+        var name = profilesList.get(index).text
+        profilesList.remove(index)
+        if (activeProfileName === name)
+            setActiveProfile("")
+        if (defaultProfileName === name)
+            setDefaultProfile("")
+        storeCustomProfiles()
+        return true
     }
 
     // PROFILES ///////////////////////////////////////////////////////////////
@@ -958,27 +1359,93 @@ QtObject {
         return -1
     }
 
+    /**
+     * Append the built-in "IUT-MarkazMohasebat" mainframe profile: an exact
+     * IBM 3278 look with the blinking block cursor and every IBM extra on.
+     * ListElement literals cannot call JS, so it is composed here at runtime.
+     */
+    function appendBuiltinIbmProfile() {
+        if (getProfileIndexByName("IUT-MarkazMohasebat") !== -1)
+            return
+        var keys = IbmProfile.mainframeKeys(PfKeys.defaultAssignments())
+        profilesList.append({
+                                "text": "IUT-MarkazMohasebat",
+                                "obj_string": stringify(
+                                    IbmProfile.mainframeProfile(
+                                        PfKeys.serialize(keys))),
+                                "builtin": true
+                            })
+    }
+
     Component.onCompleted: {
         // Manage the arguments from the QML side.
         var args = Qt.application.arguments
         if (args.indexOf("--verbose") !== -1) {
             verbose = true
         }
-        if (args.indexOf("--default-settings") === -1) {
+        // A clean run ignores every stored choice, profiles included.
+        var cleanRun = args.indexOf("--default-settings") !== -1
+
+        // The mainframe profile must exist before --profile can name it.
+        appendBuiltinIbmProfile()
+        // Factory copies first, then whatever the user saved over them:
+        // Reset puts the former back, Save keeps refreshing the latter.
+        captureFactoryProfiles()
+        if (!cleanRun)
+            loadBuiltinOverrides()
+
+        if (!cleanRun) {
             loadSettings()
         }
 
         loadCustomProfiles()
 
+        // Which profile the app opens with, and which one Save writes to.
+        var storedDefault = cleanRun ? ""
+                                     : (storage.getSetting("_DEFAULT_PROFILE") || "")
+        var storedActive = cleanRun ? ""
+                                     : (storage.getSetting("_ACTIVE_PROFILE") || "")
+        defaultProfileName = Profiles.startupDefaultName(profilesList,
+                                                          storedDefault)
+        if (defaultProfileName !== storedDefault)
+            persistDefaultProfile()
+
         var profileArgPosition = args.indexOf("--profile")
-        if (profileArgPosition !== -1) {
-            var profileIndex = getProfileIndexByName(args[profileArgPosition + 1])
-            if (profileIndex !== -1) {
-                loadProfile(profileIndex)
-            } else {
-                console.log("Warning: selected profile is not valid; ignoring it")
+        var profileArg = profileArgPosition !== -1
+                ? args[profileArgPosition + 1] : ""
+        if (profileArgPosition !== -1
+                && Profiles.indexOfName(profilesList, profileArg) === -1) {
+            console.log("Warning: selected profile is not valid; ignoring it")
+        }
+
+        // --profile and the default bring their values with them; last
+        // session's active profile is only named again, because its
+        // values already sit in the snapshot loadSettings() applied --
+        // so unsaved tweaks from last time are not thrown away.
+        var loadName = Profiles.startupLoadName(profilesList, profileArg,
+                                                 defaultProfileName)
+        if (loadName !== "") {
+            loadProfile(getProfileIndexByName(loadName))
+        } else {
+            var activeName = Profiles.startupActiveName(profilesList,
+                                                         profileArg,
+                                                         defaultProfileName,
+                                                         storedActive)
+            if (activeProfileName !== activeName) {
+                activeProfileName = activeName
+                persistActiveProfile()
             }
         }
+
+        // Keep the CMS alias block in step with the setting.  A clean
+        // (--default-settings) run stays side-effect free outside the app.
+        if (!cleanRun && shellAliases)
+            syncShellAliases()
+
+        // Everything the screen shows has just been loaded: record it as
+        // "already saved", then let the poll watch for the first change.
+        rebaseAutoSave()
+        autoSaveTimer.running = true
 
         initializedSettings()
     }

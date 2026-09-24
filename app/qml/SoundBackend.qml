@@ -5,7 +5,8 @@
 * and the whole feature degrades to silence instead of breaking the terminal.
 *
 * Bundled samples were synthesised by scripts/gen-sounds.py:
-*   - keyclick.wav  a short, dry buckling-spring style tick
+*   - keyclick.wav / keyclick-deep.wav / keyclick-deeper.wav
+*     the keyboard tick in three depths (SoundManager picks the sample)
 *   - bell.wav      the classic terminal attention beep
 *******************************************************************************/
 import QtQuick
@@ -16,6 +17,8 @@ QtObject {
 
     property real clickVolume: 0.5
     property real bellVolume: 0.5
+    /** The tick sample to play; bound by SoundManager to the setting. */
+    property url clickSource: "qrc:/sounds/keyclick.wav"
 
     function clamp(value) {
         var v = Number(value)
@@ -25,7 +28,7 @@ QtObject {
     }
 
     property SoundEffect click: SoundEffect {
-        source: "qrc:/sounds/keyclick.wav"
+        source: backend.clickSource
         volume: backend.clamp(backend.clickVolume)
     }
 

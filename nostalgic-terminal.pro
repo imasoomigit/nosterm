@@ -11,7 +11,7 @@ contains(CONFIG, build_tests) {
     SUBDIRS += tests
 }
 
-desktop.files += cool-retro-term.desktop
+desktop.files += nostalgic-terminal.desktop
 desktop.path += /usr/share/applications
 
 INSTALLS += desktop

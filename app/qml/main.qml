@@ -27,7 +27,10 @@ QtObject {
     id: appRoot
 
     property ApplicationSettings appSettings: ApplicationSettings {
-        onInitializedSettings: appRoot.createWindow()
+        // "": this is the first window, and the startup path has already
+        // chosen --profile, the default or the stored snapshot.  Loading a
+        // profile again here would override that.
+        onInitializedSettings: appRoot.createWindow("")
     }
 
     property TimeManager timeManager: TimeManager {
@@ -52,13 +55,32 @@ QtObject {
     // next/previous cycle should start from.
     property var activeWindow: null
 
-    function createWindow() {
+    /**
+     * Open a window, on `profileName` when one was named (the "New Window
+     * with Profile" submenu), else on the profile this app is configured to
+     * open with, else on whatever is showing.  One shared settings object
+     * makes this a global switch -- every window follows -- and the
+     * autosave has already put the previous profile's tweaks into it, so
+     * nothing is lost when the look changes.
+     */
+    function createWindow(profileName) {
+        var loadName = Windows.newWindowLoadName(profileName,
+                                                  appSettings.defaultProfileName)
+        if (loadName !== "")
+            appSettings.loadProfile(appSettings.getProfileIndexByName(loadName))
+
         var window = windowComponent.createObject(null)
         if (!window)
             return
 
         windowsModel.append({ window: window })
         window.show()
+        // Born from a full screen session -> opens full screen: pressing
+        // "new window" must never pop the user out of full screen.
+        var bornFrom = appRoot.activeWindow
+        if (bornFrom && Windows.inheritFullscreen(bornFrom.isFullscreen, false)
+                && !window.isFullscreen)
+            window.fullscreen = true
         window.requestActivate()
     }
 
@@ -75,12 +97,20 @@ QtObject {
     function activateWindow(window) {
         if (!window)
             return
+        // Switching away from a full screen session lands in full screen:
+        // promote the target, never demote it (Windows.inheritFullscreen).
+        var source = appRoot.activeWindow
+        var wantFull = source && source !== window
+                && Windows.inheritFullscreen(source.isFullscreen, window.isFullscreen)
+
         // Show + raise + requestActivate is what a platform's own
         // "next window" command does; doing the same keeps the switch
         // seamless, including while a window is fullscreen.
         if (window.visibility !== Window.FullScreen
                 && window.visibility !== Window.Maximized)
             window.show()
+        if (wantFull && !window.isFullscreen)
+            window.fullscreen = true
         window.raise()
         window.requestActivate()
     }

@@ -22,43 +22,83 @@ import QtQuick.Controls 2.3
 
 MenuBar {
     id: defaultMenuBar
-    // Nostalgic mode must not advertise that a menu bar exists, on any
-    // platform, so it is dropped before the platform defaults are applied.
-    visible: appSettings.chrome.menubar
+
+    /**
+     * The terminal window these menus act on.
+     *
+     * A menu bar is built from the *active* window, and Settings is a window
+     * too: with no bar of its own the macOS menu emptied while it was focused
+     * and could be stranded on a fallback set after it closed.  Settings
+     * therefore offers this very same bar aimed at whichever terminal window
+     * was last active -- which only works because every item reaches its
+     * action through `target` instead of through an id, and an id is not
+     * visible from outside the file that declares it.
+     *
+     * null -> no terminal window to act on, and nothing prints.
+     */
+    property var target: null
+
+    /** The target's published action set (see TerminalWindow.menuActions). */
+    readonly property var actionSet: target ? target.menuActions : null
+
+    // Per window: hidden while that window is full screen (nostalgic mode),
+    // back the moment it returns to windowed -- or revealed transiently by
+    // touching the top edge while full screen.
+    visible: target && (target.chrome.menubar || target.menubarReveal)
 
     Menu {
         title: qsTr("File")
-        MenuItem { action: newWindowAction }
-        MenuItem { action: newTabAction }
-        MenuItem { action: closeTabAction }
-        MenuItem { action: closeWindowAction }
+        MenuItem { action: actionSet ? actionSet.newWindow : null }
+        Menu {
+            id: profileMenu
+            title: qsTr("New Window with Profile")
+            Instantiator {
+                model: appSettings.profilesList
+                delegate: MenuItem {
+                    text: model.text
+                    // The submenu *names* the profile, so plain File > New
+                    // Window keeps its default and this one overrides it.
+                    onTriggered: appRoot.createWindow(text)
+                }
+                onObjectAdded: (index, object) => profileMenu.insertItem(index, object)
+                onObjectRemoved: (index, object) => profileMenu.removeItem(object)
+            }
+        }
+        MenuItem { action: actionSet ? actionSet.newTab : null }
+        MenuItem { action: actionSet ? actionSet.closeTab : null }
+        MenuItem { action: actionSet ? actionSet.closeWindow : null }
         MenuSeparator { }
-        MenuItem { action: quitAction }
+        MenuItem { action: actionSet ? actionSet.quit : null }
     }
     Menu {
         title: qsTr("Edit")
-        MenuItem { action: copyAction }
-        MenuItem { action: pasteAction }
+        MenuItem { action: actionSet ? actionSet.copy : null }
+        MenuItem { action: actionSet ? actionSet.paste : null }
         MenuSeparator {}
-        MenuItem { action: showsettingsAction }
+        MenuItem { action: actionSet ? actionSet.settings : null }
     }
     Menu {
         id: windowMenu
         title: qsTr("Window")
-        MenuItem { action: nextWindowAction }
-        MenuItem { action: previousWindowAction }
+        MenuItem { action: actionSet ? actionSet.nextWindow : null }
+        MenuItem { action: actionSet ? actionSet.previousWindow : null }
+        MenuSeparator { }
+        MenuItem { action: actionSet ? actionSet.splitVertical : null }
+        MenuItem { action: actionSet ? actionSet.splitHorizontal : null }
     }
     Menu {
         id: viewMenu
         title: qsTr("View")
         Instantiator {
             model: !appSettings.isMacOS ? 1 : 0
-            delegate: MenuItem { action: fullscreenAction }
+            delegate: MenuItem { action: actionSet ? actionSet.fullscreen : null }
             onObjectAdded: (index, object) => viewMenu.insertItem(index, object)
             onObjectRemoved: (index, object) => viewMenu.removeItem(object)
         }
-        MenuItem { action: zoomIn }
-        MenuItem { action: zoomOut }
+        MenuItem { action: actionSet ? actionSet.bigger : null }
+        MenuItem { action: actionSet ? actionSet.smaller : null }
+        MenuSeparator { }
+        MenuItem { action: actionSet ? actionSet.keySound : null }
     }
     Menu {
         id: profilesMenu
@@ -67,18 +107,20 @@ MenuBar {
             model: appSettings.profilesList
             delegate: MenuItem {
                 text: model.text
-                onTriggered: {
-                    appSettings.loadProfileString(obj_string)
-                }
+                // loadProfile, not loadProfileString: choosing a profile
+                // makes it the active one, so the next change -- autosaved
+                // now -- lands in the profile that is actually showing.
+                onTriggered: appSettings.loadProfile(index)
             }
-            onObjectAdded: function(index, object) { profilesMenu.insertItem(index, object) }
-            onObjectRemoved: function(object) { profilesMenu.removeItem(object) }
+            onObjectAdded: (index, object) => profilesMenu.insertItem(index, object)
+            onObjectRemoved: (index, object) => profilesMenu.removeItem(object)
         }
     }
     Menu {
         title: qsTr("Help")
+        MenuItem { action: actionSet ? actionSet.help : null }
         MenuItem {
-            action: showAboutAction
+            action: actionSet ? actionSet.about : null
         }
     }
 }
