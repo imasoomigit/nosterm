@@ -6,6 +6,8 @@
          no sound at all. -->
     <qresource prefix="/sounds">
         <file alias="keyclick.wav">../app/qml/sounds/keyclick.wav</file>
+        <file alias="keyclick-deep.wav">../app/qml/sounds/keyclick-deep.wav</file>
+        <file alias="keyclick-deeper.wav">../app/qml/sounds/keyclick-deeper.wav</file>
         <file alias="bell.wav">../app/qml/sounds/bell.wav</file>
     </qresource>
 </RCC>

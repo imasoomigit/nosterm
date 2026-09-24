@@ -31,20 +31,45 @@ var KEY_COUNT = PF_COUNT + PA_COUNT
  */
 var ACTIONS = [
     { id: "pass",        label: "Off",         kind: "pass", payload: "" },
+    // --- the window / menu functions the PF panel is made of -------------
+    { id: "help",        label: "Help",        kind: "app",  payload: "" },
+    { id: "splitVertical", label: "Split Vertical",  kind: "app", payload: "" },
+    { id: "splitHorizontal", label: "Split Horizontal", kind: "app", payload: "" },
     { id: "newWindow",   label: "New Window",  kind: "app",  payload: "" },
     { id: "nextWindow",  label: "Next Window", kind: "app",  payload: "" },
-    { id: "prevWindow",  label: "Prev Window", kind: "app",  payload: "" },
+    { id: "prevWindow",  label: "Previous Window", kind: "app", payload: "" },
     { id: "closeWindow", label: "Close Window",kind: "app",  payload: "" },
     { id: "newTab",      label: "New Tab",     kind: "app",  payload: "" },
     { id: "closeTab",    label: "Close Tab",   kind: "app",  payload: "" },
-    { id: "fullscreen",  label: "Fullscreen",  kind: "app",  payload: "" },
+    { id: "fullscreen",  label: "Exit Full Screen", kind: "app", payload: "" },
+    // Screen size as a bindable function, so it also works where a
+    // keyboard chord might be swallowed (full screen, a system that owns
+    // the modifiers): the same rungs the View menu's Zoom In / Zoom Out
+    // climb.  Not on a factory key -- offered in the editor.
+    { id: "bigger",      label: "Bigger",     kind: "app",  payload: "" },
+    { id: "smaller",     label: "Smaller",    kind: "app",  payload: "" },
     { id: "settings",    label: "Settings",    kind: "app",  payload: "" },
+    // SAVE PROFILE: the settings dialog's Save, made bindable like every
+    // other menu function.  Not on a factory key -- offered in the editor,
+    // the way FILEL and XEDIT are.
+    { id: "saveProfile", label: "Save Profile", kind: "app", payload: "" },
+    { id: "toggleKeySound", label: "Key Sound", kind: "app", payload: "" },
+    { id: "quit",        label: "Exit",        kind: "app",  payload: "" },
     { id: "copy",        label: "Copy",        kind: "app",  payload: "" },
     { id: "paste",       label: "Paste",       kind: "app",  payload: "" },
     // 3270 Attention: interrupts the running task, i.e. sends SIGINT (Ctrl+C).
     { id: "interrupt",   label: "Attention",   kind: "term", payload: "\u0003" },
     // 3270 ERASE INPUT: POSIX equivalent clears the current input line (Ctrl+U).
     { id: "eraseInput",  label: "Erase Input", kind: "term", payload: "\u0015" },
+    // FILEL: the classic file/directory listing.  Resolved per platform by
+    // commandFor() below: ls(1) on unix, dir on Windows because it answers
+    // to both cmd.exe and PowerShell (PowerShell aliases it to
+    // Get-ChildItem), so one command covers both shells.
+    { id: "fileList",    label: "FILEL",       kind: "term", payload: "" },
+    // XEDIT: the mainframe line editor, so open an editor right here.
+    // Resolved per platform: vi on unix (POSIX guarantees it exists),
+    // notepad on Windows (works in cmd.exe and PowerShell alike).
+    { id: "xedit",       label: "XEDIT",       kind: "term", payload: "" },
     { id: "sendText",    label: "Send Text",   kind: "term", payload: "" }
 ]
 
@@ -78,15 +103,42 @@ function defaultLabelFor(index) {
 }
 
 /**
- * Defaults: every PF key is passed through to the shell (so turning the bar
- * on changes nothing functionally), PA1 is the 3270 attention/break key, the
- * remaining PA keys are unassigned.
+ * The factory PF panel: window and menu functions, laid out the way the
+ * mainframe panels showed theirs (PF1 = Help, PF2 = Split, PF3 = End of a
+ * screen, ..., PF12 = a fresh window).  Shaped after the official IBM
+ * defaults -- ISPF F1=Help F2=Split F3=Exit F9=Swap, CMS F3=Quit F4=Return
+ * -- with the slots this terminal cares about filled from the menu.
+ *
+ * Shell commands are deliberately NOT part of it: the CMS command set
+ * (FILEL, HELP, ...) lives in the shell alias block (logic/aliases.js), so
+ * the panel stays functions-only exactly like ISPF / CMS panels did.
+ */
+var PF_DEFAULT_ACTIONS = [
+    "help",            // PF1  (ISPF F1 = Help)
+    "splitVertical",   // PF2  (ISPF F2 = Split)
+    "closeWindow",     // PF3  (ISPF F3 = End / Exit)
+    "nextWindow",      // PF4
+    "prevWindow",      // PF5
+    "splitHorizontal", // PF6
+    "toggleKeySound",  // PF7  key click on / off
+    "settings",        // PF8
+    "newTab",          // PF9
+    "quit",            // PF10 (EXIT)
+    "fullscreen",      // PF11 (exit full screen)
+    "newWindow"        // PF12 (NEW WINDOW)
+]
+
+/**
+ * Defaults: every PF key carries a menu function, PA1 is the 3270
+ * attention/break key, PA2 and PA3 ship unassigned.
  */
 function defaultAssignments() {
     var out = []
     for (var i = 0; i < KEY_COUNT; i++) {
         var action = "pass"
-        if (i === PF_COUNT)          // PA1
+        if (i < PF_COUNT)
+            action = PF_DEFAULT_ACTIONS[i]
+        else if (i === PF_COUNT)     // PA1
             action = "interrupt"
         out.push({
             key: defaultKeyFor(i),
@@ -254,6 +306,54 @@ function macroText(text) {
     return decodePayload(text).replace(/\n/g, "\r")
 }
 
+/**
+ * The bytes a catalog action injects for the platform we are running on.
+ * `os` is Qt.platform.os ("windows"/"win32", "osx", "x11", ...).  Actions whose
+ * payload is fixed (Attention, Erase Input) return "" and the caller falls
+ * back to the catalog payload.
+ *
+ *   FILEL -> ls on unix; dir on Windows, because dir answers to cmd.exe
+ *            AND to PowerShell (it is an alias for Get-ChildItem there), so
+ *            one command covers both shells exactly as requested.
+ *   XEDIT -> vi on unix (POSIX guarantees vi exists, so XEDIT always finds
+ *            an editor just like on the mainframe); notepad on Windows,
+ *            which both shells understand too.
+ */
+function commandFor(id, os) {
+    // Qt spells the platform differently across versions ("win32" or
+    // "windows"), and the caller passes Qt.platform.os straight through,
+    // so accept every common spelling rather than trusting one of them.
+    var s = String(os === undefined || os === null ? "" : os).toLowerCase()
+    var windows = s === "win32" || s === "windows" || s === "win" || s === "win64"
+    if (id === "fileList")
+        return windows ? "dir\r" : "ls\r"
+    if (id === "xedit")
+        return windows ? "notepad\r" : "vi\r"
+    return ""
+}
+
+/**
+ * Quote one argument for the shell that runs HELP's command: single quotes,
+ * with the classic '\'' dance for any quote inside the topic.
+ */
+function shellQuote(text) {
+    return "'" + String(text).replace(/'/g, "'\\''") + "'"
+}
+
+/**
+ * The command the HELP input box (PF1 or the Help menu) hands to the
+ * terminal.  A blank topic lists the whole manual with `man -k .` -- the
+ * way CMS HELP with no operand listed the command set -- and any other
+ * topic opens that manual page.  CR-terminated, like commandFor().
+ */
+function helpCommand(topic) {
+    var t = (topic === undefined || topic === null) ? "" : String(topic)
+    t = t.replace(/^\s+|\s+$/g, "")
+    if (t.length === 0)
+        return "man -k .\r"
+    return "man -- " + shellQuote(t) + "\r"
+}
+
 if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         PF_COUNT: PF_COUNT,
@@ -277,6 +377,10 @@ if (typeof module !== "undefined" && module.exports) {
         anyIntercepting: anyIntercepting,
         collisions: collisions,
         decodePayload: decodePayload,
-        macroText: macroText
+        macroText: macroText,
+        commandFor: commandFor,
+        shellQuote: shellQuote,
+        helpCommand: helpCommand,
+        PF_DEFAULT_ACTIONS: PF_DEFAULT_ACTIONS
     }
 }

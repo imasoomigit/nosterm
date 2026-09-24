@@ -5,7 +5,7 @@ set -x
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 OLD_CWD="$(pwd -P)"
 BUILD_DIR="$REPO_ROOT/build/dmg"
-APP="cool-retro-term.app"
+APP="nostalgic-terminal.app"
 QML_DIR="$REPO_ROOT/app/qml"
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || echo 4)}"
 VERSION="$(git -C "$REPO_ROOT" describe --tags --always --dirty=-dirty 2>/dev/null || true)"
@@ -24,7 +24,12 @@ mkdir -p "$BUILD_DIR"
 rm -f "$BUILD_DIR/${APP%.app}.dmg"
 pushd "$BUILD_DIR"
 
-"$QT_BIN/qmake" CONFIG+=release "$REPO_ROOT/cool-retro-term.pro"
+# GitHub's macOS runners are Apple Silicon, but the build must also serve
+# Intel Macs: qmake only targets the host arch by default, and macOS refuses
+# arm64-only binaries on Intel ("not supported on this type of Mac").
+# QMAKE_APPLE_DEVICE_ARCHS asks clang for both slices in one pass; qmake
+# re-passes this quoted into every SUBDIRS subproject (incl. the submodule).
+"$QT_BIN/qmake" CONFIG+=release "QMAKE_APPLE_DEVICE_ARCHS=x86_64 arm64" "$REPO_ROOT/nostalgic-terminal.pro"
 make -j"$JOBS"
 
 PLUGIN_DST="$APP/Contents/PlugIns/qmltermwidget"
@@ -36,6 +41,24 @@ export QML_IMPORT_PATH="$PWD/$APP/Contents/PlugIns"
 "$QT_BIN/macdeployqt" "$APP" -qmldir="$QML_DIR"
 
 rm -f "$APP/Contents/PlugIns/sqldrivers/"libqsql{odbc,psql,mimer}.dylib 2>/dev/null || true
+
+# Refuse to package a single-arch build: an arm64-only binary would build
+# green on the Apple Silicon runner and only fail on an Intel Mac, at the
+# user's machine, long after CI went green.  Qt's own frameworks are already
+# universal, so only these two need checking.
+for bin in "$APP/Contents/MacOS/nostalgic-terminal" \
+           "$APP/Contents/PlugIns/qmltermwidget/libqmltermwidget.dylib"; do
+    archs="$(lipo -archs "$bin" 2>/dev/null || true)"
+    case " $archs " in
+        *" x86_64 "*)
+            echo "OK: $bin [$archs]"
+            ;;
+        *)
+            echo "ERROR: $bin lacks the x86_64 slice (has: $archs)" >&2
+            exit 1
+            ;;
+    esac
+done
 
 # Remove stale signatures and ad-hoc sign so Gatekeeper doesn't report corruption.
 codesign --remove-signature "$APP" 2>/dev/null || true

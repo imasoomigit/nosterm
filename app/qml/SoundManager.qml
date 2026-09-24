@@ -22,6 +22,8 @@ QtObject {
     property bool bellEnabled: true
     property real clickVolume: 0.5
     property real bellVolume: 0.5
+    /** Which bundled sample the click plays (see logic/sound.js). */
+    property url clickSource: "qrc:/sounds/keyclick.wav"
 
     /** Set once the backend resolved; useful for tests and diagnostics. */
     readonly property bool backendReady: backend.item !== null
@@ -41,6 +43,7 @@ QtObject {
     property Component backendComponent: Component {
         SoundBackend {
             clickVolume: manager.clickVolume
+            clickSource: manager.clickSource
             bellVolume: manager.bellVolume
         }
     }

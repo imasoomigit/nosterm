@@ -30,11 +30,22 @@ Item{
     id: terminalContainer
     signal sessionFinished()
 
+    /** A HELP topic was typed into the PF panel: carry it up to the window. */
+    signal helpSubmitted(string topic)
+
     property size virtualResolution: Qt.size(kterminal.totalWidth, kterminal.totalHeight)
     property alias mainTerminal: kterminal
 
-    property ShaderEffectSource mainSource: kterminalSource
-    property BurnInEffect burnInEffect: burnInEffect
+    /**
+     * The item whose CRT shader warps the picture: the tab's stage, which
+     * may hold several panes (see CrtUnit.qml).  Null makes this pane its
+     * own unit, which is exactly the legacy single-pane mapping -- used
+     * as the fallback until the stage is there.
+     */
+    property Item warpSurface: null
+    /** Virtual size of the whole warped picture (the stage's contents). */
+    property size warpVirtualSize: virtualResolution
+
     property real fontWidth: 1.0
     property real screenScaling: 1.0
     property real scaleTexture: 1.0
@@ -70,6 +81,17 @@ Item{
             kterminal.simulateKeyPress(0, 0, true, 0, character)
         }
         return true
+    }
+
+    /**
+     * Make this pane's PF HELP cell editable, so the topic is typed right
+     * on the glass (PF1 / the Help menu).  False when the legend is not
+     * printed -- the window falls back to the dialog then.
+     */
+    function requestHelpInput() {
+        if (!screenContent.showLegend)
+            return false
+        return pfLegend.beginHelpInput()
     }
 
     // Manage copy and paste
@@ -134,16 +156,22 @@ Item{
 
     /**
      * Everything that is drawn onto the phosphor lives in here: the terminal
-     * widget, the active line highlight and the PF key legend.  This whole
-     * item is what the CRT shader samples, so all three glow, curve and
-     * flicker together instead of the overlays looking pasted on.
+     * widget, the active line highlight and the off-side PF key legend.
+     * This whole item is what the CRT shader samples, so all three glow,
+     * curve and flicker together instead of the overlays looking pasted on.
      *
-     * It fills its parent, which is the same size the terminal widget used to
-     * have, so every geometry calculation below is unchanged.
+     * The legend is part of the monitor but never part of the screen the
+     * shell drives: it prints into a strip carved off the bottom of the
+     * widget's area (see legendReserve), so the PTY grid -- and with it the
+     * cursor -- ends above it and no program output can scroll onto it.
+     * It fills its parent, which is the same size the terminal widget used
+     * to have, so every other geometry calculation below is unchanged.
      */
     Item {
         id: screenContent
         anchors.fill: parent
+
+        readonly property bool showLegend: appSettings.showPfKeys && !pfLegend.empty
 
         QMLTermWidget {
             id: kterminal
@@ -152,9 +180,11 @@ Item{
             property int margin: appSettings.margin / screenScaling
             property int totalWidth: Math.floor(parent.width / (screenScaling * fontWidth))
             property int totalHeight: Math.floor(parent.height / screenScaling)
+            /** Strip reserved for the on-glass PF legend: outside the grid. */
+            property int legendReserve: screenContent.showLegend ? pfLegend.height : 0
 
             property int rawWidth: totalWidth - 2 * margin
-            property int rawHeight: totalHeight - 2 * margin
+            property int rawHeight: Math.max(1, totalHeight - 2 * margin - legendReserve)
 
             textureSize: Qt.size(width / textureResolutionScale, height / textureResolutionScale)
 
@@ -303,26 +333,6 @@ Item{
             tint: appSettings.fontColor
         }
 
-        // IBM 3270 PF/PA legend.  Plain rectangles and text only: no
-        // MouseArea, no Controls, so it is reachable by eye and never by
-        // cursor.
-        PfKeyBar {
-            objectName: "pfKeyBar"
-            z: 2
-            anchors {
-                left: parent.left
-                right: parent.right
-                bottom: parent.bottom
-                leftMargin: kterminal.margin
-                rightMargin: kterminal.margin
-                bottomMargin: kterminal.margin
-            }
-            model: appSettings.pfAssignments
-            visible: appSettings.showPfKeys
-            textColor: appSettings.fontColor
-            borderColor: appSettings.fontColor
-        }
-
         // Keeps the row under the cursor known without needing a change
         // signal the terminal widget does not provide.
         Timer {
@@ -334,6 +344,61 @@ Item{
                      && terminalWindow.active
                      && terminalContainer.isActive
             onTriggered: terminalContainer.refreshCursorRect()
+        }
+
+        // The off-side PF panel, printed at the foot of the picture the way
+        // ISPF printed it at the foot of the screen: part of the monitor
+        // (inside the frame, in the very texture the CRT shader samples, so
+        // it glows and curves with everything else) -- but laid into the
+        // strip legendReserve carves off the terminal's grid, so neither
+        // output nor cursor can ever reach it.
+        PfKeyBar {
+            id: pfLegend
+            objectName: "pfKeyBar"
+            z: 1
+            clip: true
+            visible: screenContent.showLegend
+            anchors {
+                left: kterminal.left
+                right: kterminal.right
+                top: kterminal.bottom
+            }
+            height: Math.min(implicitHeight, Math.floor(screenContent.height * 0.5))
+            model: appSettings.pfAssignments
+            // The legend's own colours: the phosphor unless one is set,
+            // clear chips behind the words unless one is set -- and the
+            // arrow shades whatever the text colour is down to 60%, the
+            // look it always printed with, unless coloured by hand.
+            textColor: appSettings.legendTextColor !== ""
+                    ? appSettings.legendTextColor : appSettings.fontColor
+            textBgColor: appSettings.legendTextBgColor
+            arrowColor: appSettings.legendArrowColor !== ""
+                    ? appSettings.legendArrowColor
+                    : Qt.rgba(pfLegend.textColor.r, pfLegend.textColor.g,
+                              pfLegend.textColor.b, 0.6)
+            arrowBgColor: appSettings.legendArrowBgColor
+            // Honest light: ON only when the click would actually sound
+            // (master gate AND click switch).
+            keySoundOn: appSettings.audioEnabled && appSettings.keyClick
+            // Same face, size and pitch as the screen itself -- unless the
+            // legend is dressed by hand: its own family ("" = the screen's)
+            // and its own size coefficient (1.0 = the screen font's pixel
+            // size) both live in the legend settings.
+            fontFamily: appSettings.legendFontFamily !== ""
+                    ? appSettings.legendFontFamily : appSettings.terminalFontFamily
+            fontPixelSize: appSettings.terminalFontPixelSize
+            fontWidth: appSettings.terminalFontWidth
+            fontScale: appSettings.legendFontScale
+            inputBgColor: appSettings.backgroundColor
+
+            // Topic collected: give the keyboard back to the screen, then
+            // carry it up so the window turns it into a man command.
+            onHelpSubmitted: function(topic) {
+                kterminal.forceActiveFocus()
+                terminalContainer.helpSubmitted(topic)
+            }
+            // Escape in the field: just hand the keyboard back.
+            onHelpCanceled: kterminal.forceActiveFocus()
         }
     }
 
@@ -349,10 +414,12 @@ Item{
 
     Loader {
         id: menuLoader
-        // Nostalgic mode drops the context menu altogether: right click goes
-        // straight through to the terminal, as it would on a real one.
-        sourceComponent: !appSettings.chrome.contextMenu ? null
-                         : (appSettings.isMacOS || (appSettings.showMenubar && !terminalWindow.fullscreen) ? shortContextMenu : fullContextMenu)
+        // Full screen in nostalgic mode drops the context menu altogether:
+        // right click goes straight through to the terminal, as it would on
+        // a real one.  Windowed, it is back -- short while the menu bar can
+        // carry the rest, full when it cannot.
+        sourceComponent: !terminalWindow.chrome.contextMenu ? null
+                         : (appSettings.isMacOS || (terminalWindow.chrome.menubar && !terminalWindow.isFullscreen) ? shortContextMenu : fullContextMenu)
     }
     property alias contextmenu: menuLoader.item
 
@@ -394,9 +461,29 @@ Item{
             kterminal.simulateMouseMove(coord.x, coord.y, mouse.button, mouse.buttons, mouse.modifiers);
         }
 
+        /**
+         * Invert the CRT warp for a point of this pane.
+         *
+         * The warp may belong to a bigger unit than the pane: split tabs
+         * are curved once, over the whole stage (CrtUnit), so the point is
+         * first taken into the warping item's coordinates, run through the
+         * shader's own mapping (margin, frame inset, barrel), and finally
+         * handed back as a cell of this pane -- the panes tile the stage,
+         * so their virtual sizes tile the virtual whole.
+         *
+         * With no stage (warpSurface null) every step collapses to the
+         * original single-pane formula, term for term.
+         */
         function correctDistortion(x, y) {
-            x = (x - margin) / width;
-            y = (y - margin) / height;
+            var surface = warpSurface ? warpSurface : terminalContainer;
+            var stageWidth = surface.width;
+            var stageHeight = surface.height;
+
+            var point = terminalContainer.mapToItem(surface, x, y);
+            var origin = terminalContainer.mapToItem(surface, 0, 0);
+
+            x = (point.x - margin) / stageWidth;
+            y = (point.y - margin) / stageHeight;
 
             x = x * (1 + frameSize * 2) - frameSize;
             y = y * (1 + frameSize * 2) - frameSize;
@@ -405,37 +492,37 @@ Item{
             var distortion = (cc.height * cc.height + cc.width * cc.width)
                     * appSettings.screenCurvature * appSettings.screenCurvatureSize
                     * terminalWindow.normalizedWindowScale;
+            x = x - cc.width  * (1 + distortion) * distortion;
+            y = y - cc.height * (1 + distortion) * distortion;
 
-            return Qt.point((x - cc.width  * (1+distortion) * distortion) * (kterminal.totalWidth),
-                           (y - cc.height * (1+distortion) * distortion) * (kterminal.totalHeight))
+            // The whole picture in virtual pixels, then this pane's slice.
+            var unitWidth = warpVirtualSize.width;
+            var unitHeight = warpVirtualSize.height;
+            var spanWidth = (terminalContainer.width / stageWidth) * unitWidth;
+            var spanHeight = (terminalContainer.height / stageHeight) * unitHeight;
+            var offsetX = (origin.x / stageWidth) * unitWidth;
+            var offsetY = (origin.y / stageHeight) * unitHeight;
+
+            return Qt.point(
+                        spanWidth > 0
+                            ? ((x * unitWidth - offsetX) / spanWidth) * kterminal.totalWidth : 0,
+                        spanHeight > 0
+                            ? ((y * unitHeight - offsetY) / spanHeight) * kterminal.totalHeight : 0)
         }
     }
+    /**
+     * The phosphor picture as a texture -- and this pane's visible item:
+     * the stage the CRT unit samples is made of exactly these quads, one
+     * per pane, laid side by side.  (The unit runs them through the shader
+     * chain that used to live per pane: see CrtUnit.qml.)
+     */
     ShaderEffectSource{
         id: kterminalSource
+        anchors.fill: parent
         sourceItem: screenContent
         hideSource: true
         wrapMode: ShaderEffectSource.Repeat
-        visible: false
         textureSize: Qt.size(kterminal.totalWidth * scaleTexture, kterminal.totalHeight * scaleTexture)
         sourceRect: Qt.rect(-kterminal.margin, -kterminal.margin, kterminal.totalWidth, kterminal.totalHeight)
-    }
-
-    Item {
-        id: burnInContainer
-
-        property int burnInScaling: scaleTexture * appSettings.burnInQuality
-
-        width: Math.round(appSettings.lowResolutionFont
-               ? kterminal.totalWidth * Math.max(1, burnInScaling)
-               : kterminal.totalWidth * scaleTexture * appSettings.burnInQuality)
-
-        height: Math.round(appSettings.lowResolutionFont
-                ? kterminal.totalHeight * Math.max(1, burnInScaling)
-                : kterminal.totalHeight * scaleTexture * appSettings.burnInQuality)
-
-
-        BurnInEffect {
-            id: burnInEffect
-        }
     }
 }

@@ -1,17 +1,17 @@
-name: cool-retro-term # check to see if it's available
+name: nostalgic-terminal # check to see if it's available
 version: '1.1.1' # this is freakin' awesome
-summary: cool-retro-term is a cool and retro terminal emulator. # 79 char long summary
+summary: nostalgic-terminal is a cool and retro terminal emulator. # 79 char long summary
 description: |
-  cool-retro-term is a terminal emulator which mimics the look and feel of the old cathode tube screens. It has been designed to be eye-candy, customizable, and reasonably lightweight.
+  nostalgic-terminal is a terminal emulator which mimics the look and feel of the old cathode tube screens. It has been designed to be eye-candy, customizable, and reasonably lightweight.
 grade: stable # must be 'stable' to release into candidate/stable channels
 confinement: classic # use 'strict' once you have the right plugs
 
 base: core18
 
 apps:
-  cool-retro-term:
-    command: bin/desktop-launch $SNAP/usr/bin/cool-retro-term
-    desktop: usr/share/applications/cool-retro-term.desktop
+  nostalgic-terminal:
+    command: bin/desktop-launch $SNAP/usr/bin/nostalgic-terminal
+    desktop: usr/share/applications/nostalgic-terminal.desktop
     environment:
       QML2_IMPORT_PATH: $SNAP/usr/lib/x86_64-linux-gnu/qt5/qml
       

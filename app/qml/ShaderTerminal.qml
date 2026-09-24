@@ -21,13 +21,17 @@
 import QtQuick 2.2
 
 import "utils.js" as Utils
+import "logic/colormode.js" as ColorMode
 
 Item {
     function dynamicFragmentPath() {
         var rasterMode = appSettings.rasterization;
         var burnInOn = appSettings.burnIn > 0 ? 1 : 0;
         var frameOn = appSettings.frameEnabled ? 1 : 0;
-        var chromaOn = appSettings.chromaColor > 0 ? 1 : 0;
+        // The chroma variant IS the colour mode: 1 keeps the console's own
+        // hues, 0 collapses everything onto the profile's phosphor.  The
+        // old chroma slider no longer picks it (see logic/colormode.js).
+        var chromaOn = ColorMode.shaderChromaFlag(appSettings.colorMode);
         return "qrc:/shaders/terminal_dynamic_raster" + rasterMode +
                "_burn" + burnInOn +
                "_frame" + frameOn +

@@ -66,11 +66,11 @@ int main(int argc, char *argv[])
     if (argc>1 && (!strcmp(argv[1],"-h") || !strcmp(argv[1],"--help"))) {
         QTextStream cout(stdout, QIODevice::WriteOnly);
         cout << "Usage: " << argv[0] << " [--default-settings] [--workdir <dir>] [--program <prog>] [-p|--profile <prof>] [--fullscreen] [-h|--help]" << Qt::endl;
-        cout << "  --default-settings  Run cool-retro-term with the default settings" << Qt::endl;
+        cout << "  --default-settings  Run nostalgic-terminal with the default settings" << Qt::endl;
         cout << "  --workdir <dir>     Change working directory to 'dir'" << Qt::endl;
         cout << "  -e <cmd>            Command to execute. This option will catch all following arguments, so use it as the last option." << Qt::endl;
-        cout << "  --fullscreen        Run cool-retro-term in fullscreen." << Qt::endl;
-        cout << "  -p|--profile <prof> Run cool-retro-term with the given profile." << Qt::endl;
+        cout << "  --fullscreen        Run nostalgic-terminal in fullscreen." << Qt::endl;
+        cout << "  -p|--profile <prof> Run nostalgic-terminal with the given profile." << Qt::endl;
         cout << "  -h|--help           Print this help." << Qt::endl;
         cout << "  --verbose           Print additional information such as profiles and settings." << Qt::endl;
         return 0;
@@ -80,18 +80,18 @@ int main(int argc, char *argv[])
 
     if (argc>1 && (!strcmp(argv[1],"-v") || !strcmp(argv[1],"--version"))) {
         QTextStream cout(stdout, QIODevice::WriteOnly);
-        cout << "cool-retro-term " << appVersion << Qt::endl;
+        cout << "nostalgic-terminal " << appVersion << Qt::endl;
         return 0;
     }
 
     QApplication app(argc, argv);
     app.setAttribute(Qt::AA_MacDontSwapCtrlAndMeta, true);
-    app.setApplicationName(QStringLiteral("cool-retro-term"));
-    app.setOrganizationName(QStringLiteral("cool-retro-term"));
-    app.setOrganizationDomain(QStringLiteral("cool-retro-term"));
+    app.setApplicationName(QStringLiteral("nostalgic-terminal"));
+    app.setOrganizationName(QStringLiteral("nostalgic-terminal"));
+    app.setOrganizationDomain(QStringLiteral("nostalgic-terminal"));
     app.setApplicationVersion(appVersion);
 
-    KDSingleApplication singleApp(QStringLiteral("cool-retro-term"));
+    KDSingleApplication singleApp(QStringLiteral("nostalgic-terminal"));
 
     if (!singleApp.isPrimaryInstance()) {
         if (singleApp.sendMessage("new-window"))
@@ -107,12 +107,12 @@ int main(int argc, char *argv[])
     qmlRegisterUncreatableType<FontListModel>("CoolRetroTerm", 1, 0, "FontListModel", "FontListModel is created by FontManager");
 
 #if !defined(Q_OS_MAC)
-    app.setWindowIcon(QIcon::fromTheme("cool-retro-term", QIcon(":../icons/32x32/cool-retro-term.png")));
+    app.setWindowIcon(QIcon::fromTheme("nostalgic-terminal", QIcon(":../icons/32x32/nostalgic-terminal.png")));
 #if defined(Q_OS_LINUX)
-    QGuiApplication::setDesktopFileName(QStringLiteral("cool-retro-term"));
+    QGuiApplication::setDesktopFileName(QStringLiteral("nostalgic-terminal"));
 #endif
 #else
-    app.setWindowIcon(QIcon(":../icons/32x32/cool-retro-term.png"));
+    app.setWindowIcon(QIcon(":../icons/32x32/nostalgic-terminal.png"));
 #endif
 
     // Manage command line arguments from the cpp side

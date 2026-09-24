@@ -16,6 +16,8 @@ public:
 public slots:
     bool write(const QString& sourceUrl, const QString& data);
     QString read(const QString& sourceUrl);
+    bool exists(const QString& sourceUrl);
+    QString homeUrl();
 };
 
 #endif // FILEIO_H

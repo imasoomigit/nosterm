@@ -11,6 +11,7 @@ import QtMultimedia
 import QtTest
 
 import "../app/qml" as App
+import "../app/qml/logic/sound.js" as SoundLogic
 
 Rectangle {
     id: host
@@ -20,6 +21,16 @@ Rectangle {
 
     App.SoundManager {
         id: sound
+    }
+
+    /**
+     * What this machine can actually play.  A bare runner has not a single
+     * audio output, and SoundEffect then reports Error for a perfectly
+     * healthy sample; the decode test below needs to tell that apart from a
+     * sample that really is broken.
+     */
+    MediaDevices {
+        id: devices
     }
 
     TestCase {
@@ -32,6 +43,7 @@ Rectangle {
             sound.bellEnabled = true
             sound.clickVolume = 0.5
             sound.bellVolume = 0.5
+            sound.clickSource = "qrc:/sounds/keyclick.wav"
         }
 
         function test_isSilentUntilItIsSwitchedOn() {
@@ -105,25 +117,69 @@ Rectangle {
             if (!backend)
                 return                      // multimedia unavailable: silence
 
-            // Both samples ship with the application.  A missing or corrupt
-            // file would surface as SoundEffect.Error and the feature would
-            // silently degrade to nothing.
+            // Both samples ship with the application, and both must settle:
+            // a missing or corrupt file surfaces as SoundEffect.Error and
+            // the feature would silently degrade to nothing.
             tryVerify(function() {
                 return backend.click.status === SoundEffect.Ready
                         || backend.click.status === SoundEffect.Error
             }, 2000, "the key click sample never settled")
-            compare(backend.click.status, SoundEffect.Ready,
-                    "the bundled key click sample must decode")
-
             tryVerify(function() {
                 return backend.bell.status === SoundEffect.Ready
                         || backend.bell.status === SoundEffect.Error
             }, 2000, "the bell sample never settled")
-            compare(backend.bell.status, SoundEffect.Ready,
-                    "the bundled bell sample must decode")
+
+            // Ready additionally requires somewhere to send the audio: with
+            // not a single output device (bare CI runners) Qt reports Error
+            // for a healthy file.  Demand Ready whenever an output exists,
+            // otherwise only demand that loading terminated instead of
+            // hanging.  CI stands up a null sink, so the strict branch is
+            // the one exercised there.
+            if (devices.audioOutputs.length > 0) {
+                compare(backend.click.status, SoundEffect.Ready,
+                        "the bundled key click sample must decode")
+                compare(backend.bell.status, SoundEffect.Ready,
+                        "the bundled bell sample must decode")
+            } else {
+                console.log("no audio output device: samples settled, "
+                        + "playback cannot be verified on this machine")
+            }
 
             compare(backend.click.source.toString(), "qrc:/sounds/keyclick.wav")
             compare(backend.bell.source.toString(), "qrc:/sounds/bell.wav")
+        }
+
+        function test_everyTickDepthReachesTheBackend() {
+            sound.active = true
+
+            var backend = sound.backendObject
+            if (!backend)
+                return                      // multimedia unavailable: silence
+
+            var names = ["tick", "deep", "deeper"]
+            var urls = ["qrc:/sounds/keyclick.wav",
+                        "qrc:/sounds/keyclick-deep.wav",
+                        "qrc:/sounds/keyclick-deeper.wav"]
+            for (var i = 0; i < names.length; i++) {
+                sound.clickSource = SoundLogic.sampleSource(names[i])
+
+                compare(sound.clickSource.toString(), urls[i],
+                        names[i] + " must resolve to its bundled sample")
+                compare(backend.click.source.toString(), urls[i],
+                        names[i] + " must reach the backend")
+
+                // Every offered sample must settle and decode, or the tick
+                // that profile picked would silently degrade to nothing.
+                tryVerify(function() {
+                    return backend.click.status === SoundEffect.Ready
+                            || backend.click.status === SoundEffect.Error
+                }, 2000, names[i] + " never settled")
+                if (devices.audioOutputs.length > 0)
+                    compare(backend.click.status, SoundEffect.Ready,
+                            names[i] + " must decode")
+            }
+
+            sound.clickSource = "qrc:/sounds/keyclick.wav"
         }
 
         function test_requestsAreAlwaysSafe() {

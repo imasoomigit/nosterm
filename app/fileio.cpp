@@ -1,5 +1,7 @@
 #include "fileio.h"
 
+#include <QDir>
+
 FileIO::FileIO()
 {
 }
@@ -34,4 +36,16 @@ QString FileIO::read(const QString& sourceUrl) {
     file.close();
 
     return result;
+}
+
+bool FileIO::exists(const QString& sourceUrl) {
+    if (sourceUrl.isEmpty())
+        return false;
+
+    QUrl url(sourceUrl);
+    return QFile::exists(url.toLocalFile());
+}
+
+QString FileIO::homeUrl() {
+    return QUrl::fromLocalFile(QDir::homePath()).toString();
 }

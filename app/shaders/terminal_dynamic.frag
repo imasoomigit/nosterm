@@ -122,11 +122,24 @@ float randomPass(vec2 coords){
 
 vec3 convertWithChroma(vec3 inColor) {
 #if CRT_CHROMA == 1
+    // Colour mode: the texture already holds the hues the tty painted, so
+    // anything carrying one keeps it -- `ls --color` reads the way it did
+    // on the real glass.  The tty's plain white and grey text has no hue of
+    // its own (its channels are equal, so (hi - lo) / hi collapses to 0),
+    // and that is what wears the profile phosphor -- exactly the picture
+    // monochrome mode prints.  Coverage is the texel's luminance, the same
+    // measure monochrome mode uses, so the two modes differ only where the
+    // console actually chose a colour.
     float grey = rgb2grey(inColor);
-    float denom = max(grey, 0.0001);
-    vec3 foregroundColor = mix(fontColor.rgb, inColor * fontColor.rgb / denom, chromaColor);
-    return mix(backgroundColor.rgb, foregroundColor, grey);
+    float coverage = clamp(grey, 0.0, 1.0);
+    float hi = max(inColor.r, max(inColor.g, inColor.b));
+    float lo = min(inColor.r, min(inColor.g, inColor.b));
+    float chroma = hi > 0.0 ? (hi - lo) / hi : 0.0;
+    vec3 printed = chroma > 0.10 ? inColor : fontColor.rgb * grey;
+    return backgroundColor.rgb * (1.0 - coverage) + printed;
 #else
+    // Monochrome simulation: one phosphor, and the luminance the console
+    // colour carried decides how brightly it burns.
     return mix(backgroundColor.rgb, fontColor.rgb, rgb2grey(inColor));
 #endif
 }

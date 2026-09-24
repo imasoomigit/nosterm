@@ -40,9 +40,15 @@ ColumnLayout {
                     width: label.width
                     height: label.height
                     color: (index == profilesView.currentIndex) ? palette.highlight : palette.base
+                    readonly property string profileName: model.text
+                    readonly property bool isDefault: appSettings.defaultProfileName !== ""
+                            && appSettings.defaultProfileName === profileName
+                    readonly property bool isActive: appSettings.activeProfileName === profileName
                     Label {
                         id: label
-                        text: appSettings.profilesList.get(index).text
+                        text: parent.profileName
+                                + (parent.isDefault ? qsTr(" (default)") : "")
+                                + (parent.isActive ? qsTr(" (active)") : "")
                         MouseArea {
                             anchors.fill: parent
                             onClicked: profilesView.currentIndex = index
@@ -56,11 +62,45 @@ ColumnLayout {
                 Layout.fillWidth: false
                 Button {
                     Layout.fillWidth: true
+                    // Overwrites the active profile (the loaded one, or
+                    // the default): no name is ever asked for again.  The
+                    // prompt appears only when nothing is active yet --
+                    // the very first Save -- and its answer becomes the
+                    // active profile, so it too is a one-off.
                     text: qsTr("Save")
                     onClicked: {
-                        insertname.profileName = ""
-                        insertname.show()
+                        if (!appSettings.saveActiveProfile()) {
+                            insertname.profileName = ""
+                            insertname.show()
+                        }
                     }
+                }
+                Button {
+                    Layout.fillWidth: true
+                    property alias currentIndex: profilesView.currentIndex
+                    readonly property string profileName: currentIndex >= 0
+                            ? appSettings.profilesList.get(currentIndex).text : ""
+                    readonly property bool isDefault: profileName !== ""
+                            && appSettings.defaultProfileName === profileName
+                    enabled: profileName !== ""
+                    // Every future start opens on this profile; pressing
+                    // it again on the same profile takes that away.
+                    text: isDefault ? qsTr("Unset Default") : qsTr("Set as Default")
+                    onClicked: appSettings.setDefaultProfile(isDefault
+                                                              ? "" : profileName)
+                }
+                Button {
+                    Layout.fillWidth: true
+                    property alias currentIndex: profilesView.currentIndex
+                    readonly property string profileName: currentIndex >= 0
+                            ? appSettings.profilesList.get(currentIndex).text : ""
+                    readonly property bool isBuiltin: profileName !== ""
+                            && appSettings.profilesList.get(currentIndex).builtin
+                    // Built-ins carry their factory copy: Save may have
+                    // overwritten it, Reset puts the shipped values back.
+                    enabled: isBuiltin
+                    text: qsTr("Reset")
+                    onClicked: appSettings.resetProfile(profileName)
                 }
                 Button {
                     Layout.fillWidth: true
@@ -81,7 +121,8 @@ ColumnLayout {
                     enabled: currentIndex >= 0 && !appSettings.profilesList.get(
                                  currentIndex).builtin
                     onClicked: {
-                        appSettings.profilesList.remove(currentIndex)
+                        // Releases the active/default markers it carries.
+                        appSettings.removeProfile(currentIndex)
                         profilesView.selection.clear()
 
                         // TODO This is a very ugly workaround. The view didn't update on Qt 5.3.2.
@@ -185,7 +226,6 @@ ColumnLayout {
     GroupBox {
         title: qsTr("Screen")
         Layout.fillWidth: true
-        Layout.fillHeight: true
         padding: appSettings.defaultMargin
         GridLayout {
             anchors.fill: parent
@@ -237,13 +277,121 @@ ColumnLayout {
         }
     }
 
+    // SOUND ////////////////////////////////////////////////////////////////
+    // Feedback, not looks: which tick the keyboard makes, and how loud the
+    // two switches are.  Moved here from the retro (look) tab so every
+    // audible choice sits with the other general options.
+    GroupBox {
+        title: qsTr("Sound")
+        Layout.fillWidth: true
+        padding: appSettings.defaultMargin
+
+        GridLayout {
+            anchors.fill: parent
+            columns: 3
+            columnSpacing: 8
+            rowSpacing: 6
+
+            CheckBox {
+                objectName: "audioEnabledCheckBox"
+                Layout.columnSpan: 3
+                text: qsTr("Enable audible feedback")
+                checked: appSettings.audioEnabled
+                onCheckedChanged: appSettings.audioEnabled = checked
+            }
+
+            Label {
+                text: qsTr("Keyboard tick sound")
+            }
+            ComboBox {
+                objectName: "keyClickSoundComboBox"
+                Layout.columnSpan: 2
+                Layout.fillWidth: true
+                textRole: "label"
+                valueRole: "value"
+                // Disabled is the click switch off; the three samples are
+                // the bundled depths of one dry thunk (logic/sound.js).
+                model: [
+                    { label: qsTr("Disabled"), value: "off" },
+                    { label: qsTr("Tick"), value: "tick" },
+                    { label: qsTr("Deep"), value: "deep" },
+                    { label: qsTr("Deeper"), value: "deeper" }
+                ]
+                currentIndex: tickSoundIndex()
+                onActivated: function(index) {
+                    var value = model[index].value
+                    if (value === "off") {
+                        appSettings.keyClick = false
+                    } else {
+                        // Picking a sample is how you audition it: arm the
+                        // click and open the master gate, exactly as the
+                        // View menu's toggle does, so the pick is audible.
+                        appSettings.keyClickSound = value
+                        appSettings.keyClick = true
+                        appSettings.audioEnabled = true
+                    }
+                    // The interaction replaced the binding; put it back.
+                    currentIndex = Qt.binding(function() { return tickSoundIndex() })
+                }
+
+                function tickSoundIndex() {
+                    if (!appSettings.keyClick)
+                        return 0
+                    if (appSettings.keyClickSound === "deep")
+                        return 2
+                    if (appSettings.keyClickSound === "deeper")
+                        return 3
+                    return 1
+                }
+            }
+
+            CheckBox {
+                objectName: "keyClickCheckBox"
+                text: qsTr("Key click")
+                enabled: appSettings.audioEnabled
+                checked: appSettings.keyClick
+                onCheckedChanged: appSettings.keyClick = checked
+            }
+            Slider {
+                id: keyClickVolume
+                Layout.fillWidth: true
+                Layout.columnSpan: 2
+                enabled: appSettings.audioEnabled && appSettings.keyClick
+                from: 0.0
+                to: 1.0
+                stepSize: 0.05
+                value: appSettings.keyClickVolume
+                onValueChanged: appSettings.keyClickVolume = value
+            }
+
+            CheckBox {
+                objectName: "bellCheckBox"
+                text: qsTr("Terminal bell")
+                enabled: appSettings.audioEnabled
+                checked: appSettings.bell
+                onCheckedChanged: appSettings.bell = checked
+            }
+            Slider {
+                id: bellVolume
+                Layout.fillWidth: true
+                Layout.columnSpan: 2
+                enabled: appSettings.audioEnabled && appSettings.bell
+                from: 0.0
+                to: 1.0
+                stepSize: 0.05
+                value: appSettings.bellVolume
+                onValueChanged: appSettings.bellVolume = value
+            }
+        }
+    }
+
     // DIALOGS ////////////////////////////////////////////////////////////////
     InsertNameDialog {
         id: insertname
-        onNameSelected: {
-            appSettings.appendCustomProfile(name,
-                                            appSettings.composeProfileString())
-        }
+        // Only reached when no profile is active at all (first Save):
+        // the name collected here becomes the active profile, so every
+        // Save after it silently overwrites that profile instead.
+        onNameSelected: appSettings.saveAsNewProfile(name)
     }
     MessageDialog {
         id: messageDialog

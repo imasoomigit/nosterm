@@ -25,6 +25,12 @@ Loader {
     id: burnInEffect
 
     property ShaderEffectSource effectSource: item ? item.source : null
+    /**
+     * The picture the trail remembers.  It used to be this pane's own
+     * texture; the burn-in now lives on the tab's CRT unit and samples
+     * the composed stage instead (see CrtUnit.qml).
+     */
+    property ShaderEffectSource contentSource: null
     property bool resizing: false
 
     property real lastUpdate: 0
@@ -74,14 +80,10 @@ Loader {
 
             visible: false
 
-            Connections {
-                target: kterminal
-
-                onImagePainted: {
-                    completelyUpdate()
-                }
-            }
-            // Restart blurred source settings change.
+            // Paint refreshes are the caller's business now: the panes
+            // that make up the picture signal imagePainted up to the unit,
+            // which calls notePaint() (CrtUnit.qml).  What stays in here
+            // are the settings restarts, which are application wide.
             Connections {
                 target: appSettings.fontManager
 
@@ -112,7 +114,7 @@ Loader {
 
             property real time: timeManager.time
 
-            property variant txt_source: kterminalSource
+            property variant txt_source: burnInEffect.contentSource
             property variant burnInSource: burnInEffectSource
             property real burnInTime: burnInFadeTime
             property real burnInLastUpdate: burnInEffect.lastUpdate

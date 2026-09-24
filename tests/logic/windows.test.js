@@ -83,3 +83,38 @@ test('closing the only window leaves nothing active', () => {
 test('closing when there are no windows is a no-op', () => {
   assert.equal(Windows.indexAfterRemoval(0, 0, 0), -1)
 })
+
+test('full screen carries across creation and cycling, never demotes', () => {
+  assert.equal(Windows.inheritFullscreen(true, false), true, 'born from full screen')
+  assert.equal(Windows.inheritFullscreen(false, true), true, 'target already full screen')
+  assert.equal(Windows.inheritFullscreen(true, true), true)
+  assert.equal(Windows.inheritFullscreen(false, false), false, 'windowed stays windowed')
+})
+
+test('new window with a profile named opens on that profile', () => {
+  // The "New Window with Profile" submenu names one, and it wins outright.
+  assert.equal(Windows.newWindowLoadName('IUT-MarkazMohasebat', ''), 'IUT-MarkazMohasebat')
+  assert.equal(Windows.newWindowLoadName('IUT-MarkazMohasebat', 'Deep Blue'), 'IUT-MarkazMohasebat')
+})
+
+test('plain new window (no argument) falls back to the default profile', () => {
+  assert.equal(Windows.newWindowLoadName(undefined, 'Deep Blue'), 'Deep Blue')
+  assert.equal(Windows.newWindowLoadName(undefined, undefined), '')
+})
+
+test('with no default configured a plain new window loads nothing', () => {
+  // Never guess at a factory look the user never chose: carry on with
+  // what is already on screen.
+  assert.equal(Windows.newWindowLoadName(undefined, ''), '')
+  assert.equal(Windows.newWindowLoadName(undefined, null), '')
+  assert.equal(Windows.newWindowLoadName(undefined, 42), '')
+})
+
+test('an empty request means load nothing, so startup keeps its choice', () => {
+  // The first window asks with "", and --profile / the default / the stored
+  // snapshot has already been applied by then.
+  assert.equal(Windows.newWindowLoadName('', 'Deep Blue'), '')
+  assert.equal(Windows.newWindowLoadName(null, 'Deep Blue'), '')
+  assert.equal(Windows.newWindowLoadName(42, 'Deep Blue'), '')
+  assert.equal(Windows.newWindowLoadName({}, 'Deep Blue'), '')
+})

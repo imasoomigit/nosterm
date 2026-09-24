@@ -28,13 +28,33 @@ ApplicationWindow {
     width: 600
     height: 400
 
+    // Same phosphor scheme as the machine (see SettingsWindow).
+    color: appSettings.backgroundColor
+    font.family: appSettings.terminalFontFamily
+    palette {
+        window: appSettings.backgroundColor
+        windowText: appSettings.fontColor
+        alternateBase: appSettings.backgroundColor
+        base: appSettings.backgroundColor
+        text: appSettings.fontColor
+        button: appSettings.backgroundColor
+        buttonText: appSettings.fontColor
+        light: appSettings.fontColor
+        midlight: appSettings.fontColor
+        dark: Qt.darker(appSettings.fontColor, 1.6)
+        mid: Qt.darker(appSettings.fontColor, 1.6)
+        shadow: Qt.darker(appSettings.backgroundColor, 2.0)
+        highlight: appSettings.fontColor
+        highlightedText: appSettings.backgroundColor
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 15
         spacing: 15
         Text {
             Layout.alignment: Qt.AlignHCenter
-            text: "cool-retro-term"
+            text: "nostalgic-terminal"
             color: palette.text
             font {
                 bold: true
@@ -103,7 +123,7 @@ ApplicationWindow {
                 text: appSettings.version + "\n" + qsTr(
                           "Author: ") + "Filippo Scognamiglio\n" + qsTr(
                           "Email: ") + "flscogna@gmail.com\n" + qsTr(
-                          "Source: ") + "https://github.com/Swordfish90/cool-retro-term\n"
+                          "Source: ") + "https://github.com/imasoomigit/nosterm\n"
             }
         }
     }
